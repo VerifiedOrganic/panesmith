@@ -213,7 +213,7 @@ impl DemoPane {
             surface: self.surface.snapshot().to_owned_snapshot(),
             cursor: self.surface.cursor(),
             modes: self.surface.modes(),
-            stats: PaneStats,
+            stats: PaneStats::default(),
         }
     }
 

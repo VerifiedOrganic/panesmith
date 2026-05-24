@@ -66,8 +66,27 @@ the child does not actually have.
 
 ## Scrollback
 
-`PaneConfig` controls retained scrollback limits. The manager exposes retained
-lines through `PaneManager::scrollback`.
+`PaneManagerConfig::with_default_scrollback` controls the retention policy for
+new panes that do not set their own policy. `PaneConfig::with_scrollback`
+overrides that default for one pane.
+
+```rust
+# use panesmith_core::{PaneConfig, PaneManagerConfig, ScrollbackConfig};
+let manager_config = PaneManagerConfig::default().with_default_scrollback(
+    ScrollbackConfig::bounded_lines(20_000)?,
+);
+
+let pane_config = PaneConfig::shell().with_scrollback(
+    ScrollbackConfig::bounded_lines(10_000)?,
+);
+# Ok::<(), panesmith_core::PaneError>(())
+```
+
+The default policy is unbounded for compatibility. A bounded policy trims the
+backing terminal history buffer; the visible screen rows are not counted
+against the limit and are not evicted. The manager exposes retained lines
+through `PaneManager::scrollback`, and `PaneSnapshot::stats` reports how many
+history lines have been dropped by the retention policy.
 
 Scrollback is storage, not a full UI. Hosts decide how to implement search,
 selection, copying, and viewport controls.

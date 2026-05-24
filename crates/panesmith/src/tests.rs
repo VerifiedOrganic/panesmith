@@ -21,7 +21,7 @@ fn umbrella_reexports_cover_each_workspace_crate() {
         surface: SurfaceSnapshot::blank(Size::new(1, 1)),
         cursor: CursorState::hidden(),
         modes: TerminalModes::default(),
-        stats: PaneStats,
+        stats: PaneStats::default(),
     };
     let widget = TerminalPaneWidget::new(&snapshot);
     let bridge = AttachBridge::new(pane_id);
@@ -71,7 +71,10 @@ fn umbrella_config_builders_work() {
     assert_eq!(config.id, Some(PaneId::new(7)));
     assert_eq!(config.title, Some("test".into()));
     assert_eq!(config.size, Size::new(10, 20));
-    assert_eq!(config.scrollback.max_lines, 1_000);
+    assert_eq!(
+        config.scrollback.expect("pane-level scrollback").max_lines,
+        Some(1_000)
+    );
     assert_eq!(config.transcript.mode, TranscriptMode::PlainText);
     assert_eq!(config.kill.term_grace, Duration::from_secs(3));
     assert!(!config.kill.kill_descendants);
