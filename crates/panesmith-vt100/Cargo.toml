@@ -1,0 +1,22 @@
+[package]
+name = "panesmith-vt100"
+description = "vt100-backed surface backend for Panesmith terminal panes"
+categories = ["command-line-interface", "rendering"]
+documentation = "https://docs.rs/panesmith-vt100"
+keywords = ["terminal", "vt100", "ansi", "pty", "surface"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+readme = "README.md"
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+default-target = "x86_64-unknown-linux-gnu"
+rustdoc-args = ["--cfg", "docsrs"]
+targets = []
+
+[dependencies]
+panesmith-core.workspace = true
+vt100.workspace = true

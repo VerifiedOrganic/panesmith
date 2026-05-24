@@ -1,0 +1,16 @@
+size: 2x20
+cursor: row=0 col=15 visible=true
+modes: bracketed_paste=false mouse=none focus_events=false application_cursor=false alternate_screen=false
+title: none
+rows:
+  00 wrap=false |plain red style     |
+  01 wrap=false |                    |
+styles:
+  00:06 width=single text="r" fg=idx(1) bg=default attrs=none
+  00:07 width=single text="e" fg=idx(1) bg=default attrs=none
+  00:08 width=single text="d" fg=idx(1) bg=default attrs=none
+  00:10 width=single text="s" fg=rgb(1,2,3) bg=default attrs=bold,underlined
+  00:11 width=single text="t" fg=rgb(1,2,3) bg=default attrs=bold,underlined
+  00:12 width=single text="y" fg=rgb(1,2,3) bg=default attrs=bold,underlined
+  00:13 width=single text="l" fg=rgb(1,2,3) bg=default attrs=bold,underlined
+  00:14 width=single text="e" fg=rgb(1,2,3) bg=default attrs=bold,underlined

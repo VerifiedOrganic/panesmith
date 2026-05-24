@@ -1,0 +1,9 @@
+size: 2x16
+cursor: row=0 col=10 visible=true
+modes: bracketed_paste=false mouse=none focus_events=false application_cursor=false alternate_screen=false
+title: none
+rows:
+  00 wrap=false |hello rust      |
+  01 wrap=false |                |
+styles:
+  (none)

@@ -1,0 +1,13 @@
+[package]
+name = "attach-shell"
+version = "0.1.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+panesmith-attach = { workspace = true, features = ["crossterm"] }
+panesmith-core = { workspace = true, features = ["crossterm"] }
+panesmith-ratatui = { workspace = true }
+panesmith-vt100 = { workspace = true }
+ratatui = { workspace = true, features = ["crossterm"] }
+crossterm = { workspace = true }

@@ -1,0 +1,19 @@
+[package]
+name = "echo-tui"
+description = "Fixture that echoes stdin and reports byte counts to stderr"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "echo-tui"
+path = "src/main.rs"
+
+[dependencies]
+crossterm.workspace = true
+
+[dev-dependencies]
+panesmith-core.workspace = true
+panesmith-attach = { workspace = true, features = ["crossterm"] }
+panesmith-vt100.workspace = true

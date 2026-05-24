@@ -1,0 +1,54 @@
+[package]
+name = "terminal-edge-cases"
+description = "Deterministic fixture binaries for Panesmith terminal edge-case tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "alt-screen"
+path = "src/bin/alt-screen.rs"
+
+[[bin]]
+name = "bracketed-paste"
+path = "src/bin/bracketed-paste.rs"
+
+[[bin]]
+name = "cpr-query"
+path = "src/bin/cpr-query.rs"
+
+[[bin]]
+name = "exit-codes"
+path = "src/bin/exit-codes.rs"
+
+[[bin]]
+name = "frame-storm"
+path = "src/bin/frame-storm.rs"
+
+[[bin]]
+name = "resize-reporter"
+path = "src/bin/resize-reporter.rs"
+
+[[bin]]
+name = "slow-output"
+path = "src/bin/slow-output.rs"
+
+[[bin]]
+name = "styled-wrap"
+path = "src/bin/styled-wrap.rs"
+
+[[bin]]
+name = "slash-menu"
+path = "src/bin/slash-menu.rs"
+
+[dependencies]
+crossterm.workspace = true
+signal-hook = "0.3"
+
+[dev-dependencies]
+panesmith-attach = { workspace = true, features = ["crossterm"] }
+panesmith-core.workspace = true
+panesmith-ratatui.workspace = true
+panesmith-vt100.workspace = true
+ratatui.workspace = true

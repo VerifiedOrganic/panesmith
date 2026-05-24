@@ -1,0 +1,5 @@
+/target
+
+# Local automation/runtime state.
+.claude/
+.mcp.json

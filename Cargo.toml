@@ -1,0 +1,31 @@
+[workspace]
+members = [
+    "crates/panesmith",
+    "crates/panesmith-attach",
+    "crates/panesmith-core",
+    "crates/panesmith-ratatui",
+    "crates/panesmith-vt100",
+    "examples/attach-shell",
+    "examples/embedded-shell",
+    "fixtures/echo-tui",
+    "fixtures/terminal-edge-cases",
+    "xtask",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = ["crates-io"]
+repository = "https://github.com/VerifiedOrganic/panesmith"
+version = "0.1.1"
+
+[workspace.dependencies]
+panesmith-attach = { path = "crates/panesmith-attach", version = "0.1.1" }
+panesmith-core = { path = "crates/panesmith-core", version = "0.1.1" }
+panesmith-ratatui = { path = "crates/panesmith-ratatui", version = "0.1.1" }
+panesmith-vt100 = { path = "crates/panesmith-vt100", version = "0.1.1" }
+crossterm = "0.28"
+portable-pty = "0.9.0"
+ratatui = { version = "0.30", default-features = false, features = ["std"] }
+vt100 = "0.16.2"

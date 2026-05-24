@@ -1,0 +1,4 @@
+[alias]
+gate = "run --package xtask -- gate"
+check-all = "check --workspace --all-features"
+fmt-check = "fmt --all -- --check"

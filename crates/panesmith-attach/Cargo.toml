@@ -1,0 +1,31 @@
+[package]
+name = "panesmith-attach"
+description = "Fullscreen attach and detach bridge for Panesmith PTY panes"
+categories = ["command-line-interface", "development-tools"]
+documentation = "https://docs.rs/panesmith-attach"
+keywords = ["pty", "terminal", "attach", "fullscreen", "tui"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+readme = "README.md"
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+default-target = "x86_64-unknown-linux-gnu"
+rustdoc-args = ["--cfg", "docsrs"]
+targets = []
+
+[features]
+default = []
+crossterm = ["dep:crossterm", "dep:libc"]
+
+[dependencies]
+panesmith-core.workspace = true
+log = "0.4"
+crossterm = { workspace = true, optional = true }
+libc = { version = "0.2", optional = true }
+
+[dev-dependencies]
+panesmith-vt100.workspace = true

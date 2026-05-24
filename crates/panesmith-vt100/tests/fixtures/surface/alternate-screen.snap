@@ -1,0 +1,10 @@
+size: 3x12
+cursor: row=0 col=4 visible=true
+modes: bracketed_paste=false mouse=none focus_events=false application_cursor=false alternate_screen=false
+title: none
+rows:
+  00 wrap=false |main        |
+  01 wrap=false |            |
+  02 wrap=false |            |
+styles:
+  (none)

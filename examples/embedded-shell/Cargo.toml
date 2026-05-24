@@ -1,0 +1,11 @@
+[package]
+name = "embedded-shell"
+version = "0.1.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+panesmith-core = { workspace = true, features = ["crossterm"] }
+panesmith-ratatui = { workspace = true }
+ratatui = { workspace = true, features = ["crossterm"] }
+crossterm = { workspace = true }

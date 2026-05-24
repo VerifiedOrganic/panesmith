@@ -1,0 +1,35 @@
+[package]
+name = "panesmith-core"
+description = "PTY pane runtime, events, transcripts, and surface abstractions for Panesmith"
+categories = ["command-line-interface", "development-tools"]
+documentation = "https://docs.rs/panesmith-core"
+keywords = ["pty", "terminal", "transcript", "replay", "tui"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+readme = "README.md"
+repository.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+default-target = "x86_64-unknown-linux-gnu"
+rustdoc-args = ["--cfg", "docsrs"]
+targets = []
+
+[features]
+default = []
+serde = ["dep:serde"]
+crossterm = ["dep:crossterm"]
+
+[dependencies]
+libc = "0.2"
+log = "0.4"
+portable-pty.workspace = true
+vt100.workspace = true
+serde = { version = "1", features = ["derive"], optional = true }
+crossterm = { workspace = true, optional = true }
+
+[dev-dependencies]
+libc = "0.2"
+serde_json = "1"
