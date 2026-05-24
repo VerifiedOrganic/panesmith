@@ -10,7 +10,7 @@ fn pane_config_default_is_shell() {
     }
     assert!(config.args().is_empty());
     assert_eq!(config.size, Size::new(24, 80));
-    assert_eq!(config.scrollback, ScrollbackConfig::default());
+    assert_eq!(config.scrollback, None);
     assert_eq!(config.transcript.mode, TranscriptMode::Disabled);
     assert_eq!(config.kill, KillConfig::default());
     assert!(config.id.is_none());
@@ -63,8 +63,10 @@ fn pane_config_fluent_setters() {
     assert_eq!(config.cwd, Some(PathBuf::from("/tmp")));
     assert_eq!(config.env.get("FOO"), Some(&"bar".into()));
     assert_eq!(config.size, Size::new(10, 20));
-    assert_eq!(config.scrollback.max_lines, 5_000);
-    assert_eq!(config.scrollback.max_bytes, 512 * 1024);
+    assert_eq!(
+        config.scrollback.expect("pane-level scrollback").max_lines,
+        Some(5_000)
+    );
     assert_eq!(config.transcript.mode, TranscriptMode::RawBytes);
     assert_eq!(config.kill.term_grace, Duration::from_secs(10));
     assert!(!config.kill.kill_descendants);
@@ -129,9 +131,16 @@ fn scrollback_config_new_rejects_zero_bytes() {
 #[test]
 fn scrollback_config_new_accepts_valid() {
     let sc = ScrollbackConfig::new(100, 1024).expect("valid scrollback should succeed");
-    assert_eq!(sc.max_lines, 100);
-    assert_eq!(sc.max_bytes, 1024);
+    assert_eq!(sc.max_lines, Some(100));
+    assert!(sc.is_bounded());
     assert!(sc.is_enabled());
+}
+
+#[test]
+fn scrollback_config_bounded_lines_accepts_valid_limit() {
+    let sc = ScrollbackConfig::bounded_lines(20_000).expect("valid scrollback should succeed");
+    assert_eq!(sc.line_limit(), Some(20_000));
+    assert!(sc.is_bounded());
 }
 
 #[test]
@@ -141,11 +150,11 @@ fn scrollback_config_disabled_is_not_enabled() {
 }
 
 #[test]
-fn scrollback_config_default_is_enabled() {
+fn scrollback_config_default_is_unlimited() {
     let sc = ScrollbackConfig::default();
     assert!(sc.is_enabled());
-    assert_eq!(sc.max_lines, 10_000);
-    assert_eq!(sc.max_bytes, 1024 * 1024);
+    assert!(sc.is_unlimited());
+    assert_eq!(sc.max_lines, None);
 }
 
 #[test]
@@ -178,24 +187,6 @@ fn transcript_config_default_is_disabled() {
 }
 
 #[test]
-fn pane_config_validate_scrollback_mixed_zero_fails() {
-    // lines=0, bytes>0 is inconsistent
-    let config = PaneConfig::command("sh")
-        .with_size(Size::new(24, 80))
-        .with_scrollback(ScrollbackConfig {
-            max_lines: 0,
-            max_bytes: 1024,
-        });
-    let err = config
-        .validate()
-        .expect_err("mixed zero scrollback should fail");
-    assert!(
-        matches!(&err, PaneError::Spawn { message } if message.contains("scrollback")),
-        "expected Spawn error about scrollback, got {err:?}"
-    );
-}
-
-#[test]
 fn pane_config_validate_disabled_scrollback_passes() {
     let config = PaneConfig::command("sh")
         .with_size(Size::new(24, 80))
@@ -203,6 +194,19 @@ fn pane_config_validate_disabled_scrollback_passes() {
     config
         .validate()
         .expect("disabled scrollback should pass validation");
+}
+
+#[test]
+fn viewport_clamp_after_scrollback_trim_returns_to_valid_offset() {
+    let before = TerminalViewport::scrolled(30).metrics_from_counts(5, 30, 5);
+    assert_eq!(before.effective_scroll_offset, 30);
+
+    let stale = TerminalViewport::scrolled(before.effective_scroll_offset);
+    let after_trim = stale.metrics_from_counts(5, 3, 5);
+
+    assert_eq!(after_trim.max_scroll_offset, 3);
+    assert_eq!(after_trim.effective_scroll_offset, 3);
+    assert_eq!(stale.clamp(after_trim), TerminalViewport::scrolled(3));
 }
 
 #[test]
@@ -223,7 +227,7 @@ fn snapshot_types_are_constructible() {
             application_cursor: false,
             alternate_screen: false,
         },
-        stats: PaneStats,
+        stats: PaneStats::default(),
     };
 }
 
@@ -308,7 +312,7 @@ fn pane_snapshot_to_owned_clones_surface_and_metadata() {
         ),
         cursor: CursorState::new(Some(CursorPosition::new(0, 2)), true),
         modes: TerminalModes::default(),
-        stats: PaneStats,
+        stats: PaneStats::default(),
     };
 
     let owned = snapshot.to_owned_snapshot();

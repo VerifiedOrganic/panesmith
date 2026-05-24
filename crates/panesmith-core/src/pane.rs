@@ -178,58 +178,101 @@ impl CommandSpec {
     }
 }
 
-/// Configuration for scrollback buffer limits.
+/// Configuration for terminal scrollback retention.
 ///
-/// Defaults to 10_000 lines and 1 MiB of bytes. Use [`ScrollbackConfig::disabled`]
-/// to disable scrollback entirely.
+/// The default is unbounded retention, preserving the historical behavior for
+/// callers that have not opted into a policy. Use
+/// [`ScrollbackConfig::bounded_lines`] to cap retained history or
+/// [`ScrollbackConfig::disabled`] to retain no scrollback history.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScrollbackConfig {
-    /// Maximum number of lines to retain in scrollback.
-    pub max_lines: usize,
-    /// Maximum total bytes to retain in scrollback.
-    pub max_bytes: usize,
+    /// Maximum number of history lines to retain.
+    ///
+    /// `None` means unbounded retention. `Some(0)` disables scrollback.
+    /// Positive values retain at most that many history lines. The visible
+    /// terminal screen is never counted against this limit.
+    pub max_lines: Option<usize>,
 }
 
 impl ScrollbackConfig {
-    /// Creates a new scrollback config, validating that limits are sane.
+    /// Creates an unbounded scrollback policy.
+    pub const fn unlimited() -> Self {
+        Self { max_lines: None }
+    }
+
+    /// Creates a bounded scrollback policy.
     ///
     /// # Errors
     ///
-    /// Returns [`PaneError::Spawn`] when either limit is zero.
-    pub fn new(max_lines: usize, max_bytes: usize) -> Result<Self> {
-        if max_lines == 0 || max_bytes == 0 {
+    /// Returns [`PaneError::Spawn`] when `max_lines` is zero.
+    pub fn bounded_lines(max_lines: usize) -> Result<Self> {
+        if max_lines == 0 {
             Err(PaneError::Spawn {
-                message: "scrollback max_lines and max_bytes must be > 0".into(),
+                message: "scrollback max_lines must be > 0".into(),
             })
         } else {
             Ok(Self {
-                max_lines,
-                max_bytes,
+                max_lines: Some(max_lines),
             })
         }
     }
 
-    /// Disables scrollback entirely.
-    pub fn disabled() -> Self {
-        Self {
-            max_lines: 0,
-            max_bytes: 0,
+    /// Creates a bounded scrollback policy.
+    ///
+    /// This constructor is retained for source compatibility with earlier
+    /// Panesmith prereleases that accepted a byte limit. The backing terminal
+    /// history is bounded by `max_lines`; `max_bytes` must still be non-zero
+    /// to catch stale mixed-zero configurations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PaneError::Spawn`] when either argument is zero.
+    pub fn new(max_lines: usize, max_bytes: usize) -> Result<Self> {
+        if max_bytes == 0 {
+            return Err(PaneError::Spawn {
+                message: "scrollback max_bytes must be > 0".into(),
+            });
         }
+        Self::bounded_lines(max_lines)
     }
 
-    /// Returns `true` if scrollback is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.max_lines > 0 && self.max_bytes > 0
+    /// Disables scrollback entirely.
+    pub const fn disabled() -> Self {
+        Self { max_lines: Some(0) }
+    }
+
+    /// Returns `true` when the policy retains no history.
+    pub const fn is_disabled(&self) -> bool {
+        matches!(self.max_lines, Some(0))
+    }
+
+    /// Returns `true` when history retention is unbounded.
+    pub const fn is_unlimited(&self) -> bool {
+        self.max_lines.is_none()
+    }
+
+    /// Returns `true` when a positive line bound is configured.
+    pub const fn is_bounded(&self) -> bool {
+        matches!(self.max_lines, Some(lines) if lines > 0)
+    }
+
+    /// Returns `true` when some history can be retained.
+    pub const fn is_enabled(&self) -> bool {
+        !self.is_disabled()
+    }
+
+    /// Returns the configured line limit.
+    ///
+    /// `None` means unbounded. `Some(0)` means disabled.
+    pub const fn line_limit(&self) -> Option<usize> {
+        self.max_lines
     }
 }
 
 impl Default for ScrollbackConfig {
     fn default() -> Self {
-        Self {
-            max_lines: 10_000,
-            max_bytes: 1024 * 1024,
-        }
+        Self::unlimited()
     }
 }
 
@@ -250,9 +293,8 @@ pub enum TranscriptMode {
 
 /// Configuration for transcript recording behavior.
 ///
-/// Defaults to [`TranscriptMode::Disabled`] with [`ScrollbackConfig`]
-/// equivalent limits (10_000 lines and 1 MiB of bytes). A limit of `0`
-/// disables that bound.
+/// Defaults to [`TranscriptMode::Disabled`] with 10,000 line and 1 MiB byte
+/// retention limits. A limit of `0` disables that bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TranscriptConfig {
@@ -912,7 +954,7 @@ impl TerminalViewport {
 
     /// Clamps this viewport to the provided metrics.
     pub fn clamp(self, metrics: TerminalViewportMetrics) -> Self {
-        if self.follow_tail {
+        if self.follow_tail || metrics.effective_scroll_offset == 0 {
             self.follow_tail()
         } else {
             Self::scrolled(metrics.effective_scroll_offset)
@@ -972,6 +1014,9 @@ pub struct SurfaceUpdate {
     pub modes_changed: bool,
     /// Whether scrollback changed.
     pub scrollback_changed: bool,
+    /// Number of retained history lines dropped by the surface policy while
+    /// consuming this update.
+    pub scrollback_lines_dropped: u64,
 }
 
 impl SurfaceUpdate {
@@ -983,6 +1028,7 @@ impl SurfaceUpdate {
             title_changed: false,
             modes_changed: false,
             scrollback_changed: false,
+            scrollback_lines_dropped: 0,
         }
     }
 }
@@ -1071,7 +1117,12 @@ pub trait SurfaceBackend: std::fmt::Debug + Send {
 
 /// Runtime statistics for a pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct PaneStats;
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PaneStats {
+    /// Total history lines dropped from the backing scrollback buffer because
+    /// of the pane's configured retention policy.
+    pub scrollback_lines_dropped: u64,
+}
 
 /// A read-only view of pane state.
 ///
@@ -1178,7 +1229,7 @@ impl Default for KillConfig {
 /// | `cwd`       | `None` (inherits process cwd)                           |
 /// | `env`       | empty map                                               |
 /// | `size`      | `Size { rows: 24, cols: 80 }`                           |
-/// | `scrollback`| `ScrollbackConfig { max_lines: 10_000, max_bytes: 1 MiB }` |
+/// | `scrollback`| `None` (inherit the manager default)                    |
 /// | `transcript`| `TranscriptConfig { mode: TranscriptMode::Disabled }`   |
 /// | `surface`   | `SurfaceConfig`                                         |
 /// | `input`     | `InputConfig`                                           |
@@ -1199,8 +1250,11 @@ pub struct PaneConfig {
     pub env: BTreeMap<String, String>,
     /// Initial terminal size.
     pub size: Size,
-    /// Scrollback buffer limits.
-    pub scrollback: ScrollbackConfig,
+    /// Optional pane-specific scrollback retention policy.
+    ///
+    /// `None` means the manager's default scrollback policy is applied when
+    /// the pane is spawned.
+    pub scrollback: Option<ScrollbackConfig>,
     /// Transcript recording configuration.
     pub transcript: TranscriptConfig,
     /// Surface rendering configuration.
@@ -1231,7 +1285,8 @@ impl<'de> serde::Deserialize<'de> for PaneConfig {
             cwd: Option<PathBuf>,
             env: BTreeMap<String, String>,
             size: Size,
-            scrollback: ScrollbackConfig,
+            #[serde(default)]
+            scrollback: Option<ScrollbackConfig>,
             transcript: TranscriptConfig,
             surface: SurfaceConfig,
             input: InputConfig,
@@ -1338,9 +1393,9 @@ impl PaneConfig {
         self
     }
 
-    /// Sets the scrollback configuration.
+    /// Sets this pane's scrollback configuration.
     pub fn with_scrollback(mut self, scrollback: ScrollbackConfig) -> Self {
-        self.scrollback = scrollback;
+        self.scrollback = Some(scrollback);
         self
     }
 
@@ -1387,24 +1442,12 @@ impl PaneConfig {
     /// Checks:
     /// - command program is non-empty
     /// - size rows and cols are non-zero
-    /// - scrollback limits are sane (both > 0 if enabled)
     pub fn validate(&self) -> Result<()> {
         self.command.validate()?;
         if self.size.rows == 0 || self.size.cols == 0 {
             return Err(PaneError::InvalidSize {
                 rows: self.size.rows,
                 cols: self.size.cols,
-            });
-        }
-        // Scrollback is considered enabled when both limits are > 0.
-        // If only one is > 0, that's an inconsistent state — this can happen
-        // when ScrollbackConfig is constructed via struct literal instead of
-        // through ScrollbackConfig::new(). We catch it here as defense-in-depth.
-        if self.scrollback.max_lines == 0 && self.scrollback.max_bytes > 0
-            || self.scrollback.max_lines > 0 && self.scrollback.max_bytes == 0
-        {
-            return Err(PaneError::Spawn {
-                message: "scrollback max_lines and max_bytes must both be > 0 or both be 0".into(),
             });
         }
         Ok(())
@@ -1420,7 +1463,7 @@ impl Default for PaneConfig {
             cwd: None,
             env: BTreeMap::new(),
             size: Size::new(24, 80),
-            scrollback: ScrollbackConfig::default(),
+            scrollback: None,
             transcript: TranscriptConfig::default(),
             surface: SurfaceConfig,
             input: InputConfig::default(),

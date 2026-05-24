@@ -4,8 +4,8 @@ use std::fmt;
 
 use panesmith_core::{
     vt100_surface::{Vt100Surface, DEFAULT_VT100_SCROLLBACK_ROWS},
-    CursorState, PaneId, ReplayBackendKind, Result, ScrollbackSnapshot, Size, SurfaceBackend,
-    SurfaceBackendMetadata, SurfaceSnapshot, SurfaceUpdate, TerminalModes,
+    CursorState, PaneId, ReplayBackendKind, Result, ScrollbackConfig, ScrollbackSnapshot, Size,
+    SurfaceBackend, SurfaceBackendMetadata, SurfaceSnapshot, SurfaceUpdate, TerminalModes,
 };
 
 const VALIDATION_NAME: &str = "vt100 backend";
@@ -32,6 +32,22 @@ impl Vt100Backend {
                 pane_id,
                 size,
                 DEFAULT_VT100_SCROLLBACK_ROWS,
+                VALIDATION_NAME,
+            )?,
+        })
+    }
+
+    /// Creates a vt100-backed surface with an explicit scrollback policy.
+    pub fn new_with_scrollback(
+        pane_id: PaneId,
+        size: Size,
+        scrollback: ScrollbackConfig,
+    ) -> Result<Self> {
+        Ok(Self {
+            inner: Vt100Surface::new(
+                pane_id,
+                size,
+                scrollback.line_limit().unwrap_or(usize::MAX),
                 VALIDATION_NAME,
             )?,
         })

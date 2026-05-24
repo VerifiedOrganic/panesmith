@@ -213,7 +213,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 
 [[package]]
 name = "echo-tui"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "crossterm 0.28.1",
  "panesmith-attach",
@@ -451,7 +451,7 @@ dependencies = [
 
 [[package]]
 name = "panesmith"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "panesmith-attach",
  "panesmith-core",
@@ -463,7 +463,7 @@ dependencies = [
 
 [[package]]
 name = "panesmith-attach"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "crossterm 0.28.1",
  "libc",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "panesmith-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "crossterm 0.28.1",
  "libc",
@@ -487,7 +487,7 @@ dependencies = [
 
 [[package]]
 name = "panesmith-ratatui"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "panesmith-core",
  "ratatui",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "panesmith-vt100"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "panesmith-core",
  "vt100",
@@ -859,7 +859,7 @@ dependencies = [
 
 [[package]]
 name = "terminal-edge-cases"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "crossterm 0.28.1",
  "panesmith-attach",

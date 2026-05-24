@@ -389,23 +389,6 @@ fn pane_config_deserialize_rejects_zero_size() {
 
 #[cfg(feature = "serde")]
 #[test]
-fn pane_config_deserialize_rejects_mixed_zero_scrollback() {
-    let invalid = PaneConfig::command("sh")
-        .with_size(Size::new(24, 80))
-        .with_scrollback(ScrollbackConfig {
-            max_lines: 0,
-            max_bytes: 1024,
-        });
-    let json = serde_json::to_string(&invalid).expect("serialize should succeed");
-    let result: std::result::Result<PaneConfig, _> = serde_json::from_str(&json);
-    assert!(
-        result.is_err(),
-        "deserializing mixed-zero scrollback should fail"
-    );
-}
-
-#[cfg(feature = "serde")]
-#[test]
 fn pane_config_deserialize_accepts_valid() {
     let valid = PaneConfig::command("sh").with_size(Size::new(24, 80));
     let json = serde_json::to_string(&valid).expect("serialize should succeed");

@@ -24,9 +24,9 @@ use crate::{
     IoOperation, KeyCode, KeyEventKind, KeyInput, KeyModifiers, KillReason, OutputEvent,
     OverflowEvent, OverflowQueue, PaneConfig, PaneError, PaneEvent, PaneEventKind, PaneId,
     PaneInteractionMode, PaneState, PaneStats, PortablePtyBackend, PtyBackend, PtyFrame,
-    PtyProcess, ResizedEvent, Result, Size, SpawnedEvent, StateChangedEvent, SurfaceBackend,
-    SurfaceChangedEvent, SurfaceRow, SurfaceUpdate, TerminalModes, TerminalViewport,
-    TerminalViewportMetrics, TranscriptRotatedEvent,
+    PtyProcess, ResizedEvent, Result, ScrollbackConfig, Size, SpawnedEvent, StateChangedEvent,
+    SurfaceBackend, SurfaceChangedEvent, SurfaceRow, SurfaceUpdate, TerminalModes,
+    TerminalViewport, TerminalViewportMetrics, TranscriptRotatedEvent,
 };
 
 const DEFAULT_MAX_PTY_FRAMES_PER_DRAIN: usize = 32;
@@ -113,6 +113,7 @@ where
 pub struct PaneManagerConfig {
     pty_spawner: PtySpawner,
     surface_factory: SurfaceFactory,
+    default_scrollback: ScrollbackConfig,
     max_pty_frames_per_drain: usize,
     max_pty_frames_per_repro_dump: usize,
 }
@@ -120,6 +121,7 @@ pub struct PaneManagerConfig {
 impl fmt::Debug for PaneManagerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PaneManagerConfig")
+            .field("default_scrollback", &self.default_scrollback)
             .field("max_pty_frames_per_drain", &self.max_pty_frames_per_drain)
             .field(
                 "max_pty_frames_per_repro_dump",
@@ -141,9 +143,10 @@ impl Default for PaneManagerConfig {
                 Ok(Box::new(DefaultSurfaceBackend::new(
                     pane_id,
                     config.size,
-                    config.scrollback,
+                    config.scrollback.unwrap_or_default(),
                 )?) as Box<dyn SurfaceBackend + Send>)
             }),
+            default_scrollback: ScrollbackConfig::default(),
             max_pty_frames_per_drain: DEFAULT_MAX_PTY_FRAMES_PER_DRAIN,
             max_pty_frames_per_repro_dump: DEFAULT_MAX_PTY_FRAMES_PER_REPRO_DUMP,
         }
@@ -183,6 +186,13 @@ impl PaneManagerConfig {
             + 'static,
     {
         self.surface_factory = Arc::new(factory);
+        self
+    }
+
+    /// Sets the scrollback policy applied to new panes that do not specify a
+    /// pane-level policy.
+    pub fn with_default_scrollback(mut self, scrollback: ScrollbackConfig) -> Self {
+        self.default_scrollback = scrollback;
         self
     }
 
@@ -499,8 +509,9 @@ impl PaneManager {
     /// # Errors
     ///
     /// Returns an error if the pane cannot be spawned.
-    pub fn spawn(&mut self, config: PaneConfig) -> Result<PaneId> {
+    pub fn spawn(&mut self, mut config: PaneConfig) -> Result<PaneId> {
         config.validate()?;
+        config.scrollback = Some(config.scrollback.unwrap_or(self.config.default_scrollback));
 
         let pane_id = config.id.unwrap_or_else(|| {
             self.next_pane_id += 1;
@@ -531,7 +542,7 @@ impl PaneManager {
                 state: PaneState::Starting,
                 interaction_mode: PaneInteractionMode::Embedded,
                 input_config,
-                stats: PaneStats,
+                stats: PaneStats::default(),
                 surface_generation: 0,
                 next_seq: 0,
                 size_history: vec![ReproSizeEvent::new(0, initial_size)],
@@ -1495,7 +1506,7 @@ impl PaneManager {
                 state: PaneState::Running,
                 interaction_mode: PaneInteractionMode::Embedded,
                 input_config: crate::InputConfig::default(),
-                stats: PaneStats,
+                stats: PaneStats::default(),
                 surface_generation: 0,
                 next_seq: 0,
                 size_history: vec![ReproSizeEvent::new(0, surface_size)],
@@ -2470,6 +2481,10 @@ impl PaneManager {
             .get_mut(&pane_id)
             .ok_or(PaneError::NotFound { pane_id })?;
         let update = pane.surface.feed(bytes)?;
+        pane.stats.scrollback_lines_dropped = pane
+            .stats
+            .scrollback_lines_dropped
+            .saturating_add(update.scrollback_lines_dropped);
         pane.surface_generation += 1;
         Ok((update, pane.surface_generation))
     }

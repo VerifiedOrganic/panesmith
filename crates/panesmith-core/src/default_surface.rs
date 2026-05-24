@@ -92,11 +92,7 @@ impl SurfaceBackend for DefaultSurfaceBackend {
 }
 
 fn configured_scrollback_rows(scrollback: ScrollbackConfig) -> usize {
-    if scrollback.is_enabled() {
-        scrollback.max_lines.max(1)
-    } else {
-        0
-    }
+    scrollback.line_limit().unwrap_or(usize::MAX)
 }
 
 #[cfg(test)]

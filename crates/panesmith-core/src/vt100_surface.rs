@@ -19,7 +19,7 @@ use crate::{
 
 /// Default scrollback capacity used by the public vt100 backend.
 #[doc(hidden)]
-pub const DEFAULT_VT100_SCROLLBACK_ROWS: usize = 10_000;
+pub const DEFAULT_VT100_SCROLLBACK_ROWS: usize = usize::MAX;
 
 /// Shared terminal-aware vt100 surface engine.
 #[doc(hidden)]
@@ -137,7 +137,7 @@ impl Vt100Surface {
             };
 
         self.mode_overlay.update_from_output(bytes);
-        self.parser.process(bytes);
+        let scrollback_lines_dropped = self.process_bytes_and_count_scrollback_drops(bytes);
         self.previous_byte_was_escape = bytes.last().copied() == Some(0x1b);
 
         let cursor = cursor_from_screen(self.parser.screen());
@@ -157,6 +157,7 @@ impl Vt100Surface {
             title_changed: self.title() != previous_title.as_deref(),
             modes_changed: modes != previous_modes,
             scrollback_changed: scrollback_state != previous_scrollback_state,
+            scrollback_lines_dropped,
         })
     }
 
@@ -190,6 +191,37 @@ impl Vt100Surface {
 
     fn title(&self) -> Option<&str> {
         self.parser.callbacks().title()
+    }
+
+    fn process_bytes_and_count_scrollback_drops(&mut self, bytes: &[u8]) -> u64 {
+        if self.scrollback_capacity == usize::MAX {
+            self.parser.process(bytes);
+            return 0;
+        }
+
+        let mut dropped = 0u64;
+        let mut before_len = scrollback_len_from_screen(self.parser.screen_mut());
+        for byte in bytes {
+            let before_newest = (self.scrollback_capacity > 0
+                && before_len == self.scrollback_capacity)
+                .then(|| newest_scrollback_row_digest_from_screen(self.parser.screen_mut()));
+
+            self.parser.process(std::slice::from_ref(byte));
+
+            let after_len = scrollback_len_from_screen(self.parser.screen_mut());
+            if self.scrollback_capacity > 0
+                && before_len == self.scrollback_capacity
+                && after_len == self.scrollback_capacity
+            {
+                let after_newest =
+                    newest_scrollback_row_digest_from_screen(self.parser.screen_mut());
+                if before_newest != Some(after_newest) {
+                    dropped = dropped.saturating_add(1);
+                }
+            }
+            before_len = after_len;
+        }
+        dropped
     }
 }
 
@@ -305,6 +337,30 @@ fn color_from_vt100(color: Color) -> Option<ColorSpec> {
 
 fn scrollback_state_from_screen(screen: &mut Screen, capacity: usize) -> ScrollbackState {
     scrollback_state_from_screen_with_digest_policy(screen, capacity, false)
+}
+
+fn scrollback_len_from_screen(screen: &mut Screen) -> usize {
+    let previous_offset = screen.scrollback();
+    screen.set_scrollback(usize::MAX);
+    let len = screen.scrollback();
+    screen.set_scrollback(previous_offset);
+    len
+}
+
+fn newest_scrollback_row_digest_from_screen(screen: &mut Screen) -> u64 {
+    let previous_offset = screen.scrollback();
+    screen.set_scrollback(usize::MAX);
+    let len = screen.scrollback();
+    debug_assert!(len > 0, "newest scrollback digest requires history");
+    screen.set_scrollback(1);
+
+    let size = size_from_screen(screen);
+    let mut hasher = DefaultHasher::new();
+    hash_scrollback_row(screen, 0, size.cols, &mut hasher);
+    let digest = hasher.finish();
+
+    screen.set_scrollback(previous_offset);
+    digest
 }
 
 fn scrollback_state_from_screen_with_digest_policy(

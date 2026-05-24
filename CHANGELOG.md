@@ -7,6 +7,11 @@ Panesmith crates.
 
 No unreleased changes.
 
+## 0.2.0 - 2026-05-24
+
+- added bounded terminal scrollback retention with manager defaults, per-pane
+  overrides, backing-buffer trimming, and dropped-history counters in snapshots
+
 ## 0.1.1 - 2026-05-24
 
 This initial public alpha release includes:

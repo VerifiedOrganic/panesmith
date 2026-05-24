@@ -491,7 +491,7 @@ fn styled_snapshot_with_cursor(
         surface: SurfaceSnapshot::new(size, rows, cursor, TerminalModes::default(), None),
         cursor,
         modes: TerminalModes::default(),
-        stats: PaneStats,
+        stats: PaneStats::default(),
     }
 }
 

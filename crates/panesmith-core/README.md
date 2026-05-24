@@ -1,8 +1,8 @@
 # panesmith-core
 
-`panesmith-core` provides the PTY pane runtime, event model, transcript
-retention, repro dump types, and surface abstractions that the rest of the
-workspace builds on.
+`panesmith-core` provides the PTY pane runtime, event model, scrollback and
+transcript retention, repro dump types, and surface abstractions that the rest
+of the workspace builds on.
 
 ## What this crate covers
 

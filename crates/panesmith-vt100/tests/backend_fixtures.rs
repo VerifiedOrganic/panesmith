@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use panesmith_core::{
     CellAttrs, CellStyle, CellWidth, ColorSpec, CursorPosition, DirtyRows, MouseMode, PaneError,
-    PaneId, Size, SurfaceBackend, SurfaceRow, SurfaceSnapshot,
+    PaneId, ScrollbackConfig, Size, SurfaceBackend, SurfaceRow, SurfaceSnapshot,
 };
 use panesmith_vt100::Vt100Backend;
 
@@ -161,8 +161,12 @@ fn backend_scrollback_preserves_styled_ansi_output() {
 
 #[test]
 fn backend_marks_scrollback_changed_when_full_buffer_evicts_history() {
-    let mut backend = Vt100Backend::new(PaneId::new(15), Size::new(2, 5)).unwrap();
-    // Assumes DEFAULT_SCROLLBACK_LEN = 10_000; update if the private constant changes.
+    let mut backend = Vt100Backend::new_with_scrollback(
+        PaneId::new(15),
+        Size::new(2, 5),
+        ScrollbackConfig::bounded_lines(10_000).unwrap(),
+    )
+    .unwrap();
     let seed = format!("{}bbbbb", "aaaaa\n".repeat(10_001));
 
     backend
@@ -177,6 +181,7 @@ fn backend_marks_scrollback_changed_when_full_buffer_evicts_history() {
     let after = backend.scrollback().to_owned_snapshot();
 
     assert!(update.scrollback_changed);
+    assert_eq!(update.scrollback_lines_dropped, 2);
     assert_eq!(after.lines.len(), 10_000);
     assert_eq!(
         row_text(&backend.snapshot().to_owned_snapshot().rows[0]),
@@ -323,8 +328,12 @@ fn backend_marks_scrollback_changed_when_resize_splits_reset_sequence() {
 
 #[test]
 fn backend_marks_scrollback_changed_when_full_scrollback_rotates_blank_screen() {
-    let mut backend = Vt100Backend::new(PaneId::new(23), Size::new(2, 5)).unwrap();
-    // Assumes DEFAULT_SCROLLBACK_LEN = 10_000; update if the private constant changes.
+    let mut backend = Vt100Backend::new_with_scrollback(
+        PaneId::new(23),
+        Size::new(2, 5),
+        ScrollbackConfig::bounded_lines(10_000).unwrap(),
+    )
+    .unwrap();
     let seed = format!("{}bbbbb", "aaaaa\n".repeat(10_001));
 
     backend

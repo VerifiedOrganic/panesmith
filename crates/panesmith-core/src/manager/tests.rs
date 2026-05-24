@@ -204,6 +204,7 @@ impl SurfaceBackend for EchoSurfaceBackend {
             title_changed: false,
             modes_changed: false,
             scrollback_changed: false,
+            scrollback_lines_dropped: 0,
         })
     }
 
@@ -913,6 +914,30 @@ fn output_frame(seq: u64, bytes: &[u8]) -> PtyFrame {
     }
 }
 
+fn numbered_lines(count: usize) -> Vec<u8> {
+    let mut out = String::new();
+    for i in 0..count {
+        if i > 0 {
+            out.push_str("\r\n");
+        }
+        out.push_str(&format!("line{i}"));
+    }
+    out.into_bytes()
+}
+
+fn manager_with_default_surface_scrollback(scrollback: ScrollbackConfig) -> PaneManager {
+    PaneManager::new(
+        PaneManagerConfig::default()
+            .with_default_scrollback(scrollback)
+            .with_pty_spawner(|_config| {
+                Ok(Box::new(FakePtyProcess {
+                    id: "fake-pty".into(),
+                    frames: VecDeque::new(),
+                }) as Box<dyn PtyProcess>)
+            }),
+    )
+}
+
 fn exit_frame(seq: u64, code: Option<i32>) -> PtyFrame {
     PtyFrame::Exited {
         seq,
@@ -1226,6 +1251,7 @@ fn pane_manager_spawn_with_fake_runtime_emits_spawn_and_runtime_events() {
                         title_changed: false,
                         modes_changed: false,
                         scrollback_changed: false,
+                        scrollback_lines_dropped: 0,
                     },
                 )) as Box<dyn SurfaceBackend + Send>)
             }),
@@ -2284,6 +2310,7 @@ fn pane_manager_feed_surface_exposes_update_metadata_and_scrollback() {
         title_changed: true,
         modes_changed: true,
         scrollback_changed: true,
+        scrollback_lines_dropped: 0,
     };
     let backend = FakeSurfaceBackend::new(Arc::clone(&shared), Size::new(10, 20), update);
     let mut manager = PaneManager::new(PaneManagerConfig::default());
@@ -2335,6 +2362,7 @@ fn pane_manager_scrollback_reader_slices_retained_lines() {
         title_changed: false,
         modes_changed: false,
         scrollback_changed: true,
+        scrollback_lines_dropped: 0,
     };
     let mut backend = FakeSurfaceBackend::new(Arc::clone(&shared), Size::new(10, 20), update);
     backend.scrollback = vec!["line-1", "line-2", "line-3"];
@@ -2363,6 +2391,78 @@ fn pane_manager_scrollback_reader_slices_retained_lines() {
         scrollback.to_owned_snapshot().lines[0].text.as_ref(),
         "line-1"
     );
+}
+
+#[test]
+fn pane_manager_default_scrollback_bounds_new_panes_and_tracks_drops() {
+    let mut manager = manager_with_default_surface_scrollback(
+        ScrollbackConfig::bounded_lines(3).expect("bounded scrollback config"),
+    );
+    let pane_id = manager
+        .spawn(PaneConfig::command("fake-command").with_size(Size::new(2, 8)))
+        .expect("spawn should succeed");
+
+    manager.feed_output_for_testing(pane_id, numbered_lines(8));
+
+    let scrollback = manager
+        .scrollback(pane_id)
+        .expect("scrollback should be readable")
+        .to_owned_snapshot();
+    let snapshot = manager
+        .snapshot(pane_id)
+        .expect("snapshot should be readable");
+    assert_eq!(scrollback.lines.len(), 3);
+    assert_eq!(scrollback.lines[0].text.as_ref(), "line3");
+    assert_eq!(scrollback.lines[2].text.as_ref(), "line5");
+    assert_eq!(snapshot.stats.scrollback_lines_dropped, 3);
+}
+
+#[test]
+fn pane_manager_pane_scrollback_overrides_manager_default() {
+    let mut manager = manager_with_default_surface_scrollback(
+        ScrollbackConfig::bounded_lines(2).expect("bounded scrollback config"),
+    );
+    let pane_id = manager
+        .spawn(
+            PaneConfig::command("fake-command")
+                .with_size(Size::new(2, 8))
+                .with_scrollback(
+                    ScrollbackConfig::bounded_lines(4).expect("bounded scrollback config"),
+                ),
+        )
+        .expect("spawn should succeed");
+
+    manager.feed_output_for_testing(pane_id, numbered_lines(8));
+
+    let scrollback = manager
+        .scrollback(pane_id)
+        .expect("scrollback should be readable")
+        .to_owned_snapshot();
+    assert_eq!(scrollback.lines.len(), 4);
+    assert_eq!(scrollback.lines[0].text.as_ref(), "line2");
+    assert_eq!(scrollback.lines[3].text.as_ref(), "line5");
+}
+
+#[test]
+fn pane_manager_default_scrollback_is_unlimited() {
+    let mut manager = manager_with_default_surface_scrollback(ScrollbackConfig::default());
+    let pane_id = manager
+        .spawn(PaneConfig::command("fake-command").with_size(Size::new(2, 8)))
+        .expect("spawn should succeed");
+
+    manager.feed_output_for_testing(pane_id, numbered_lines(8));
+
+    let scrollback = manager
+        .scrollback(pane_id)
+        .expect("scrollback should be readable")
+        .to_owned_snapshot();
+    let snapshot = manager
+        .snapshot(pane_id)
+        .expect("snapshot should be readable");
+    assert_eq!(scrollback.lines.len(), 6);
+    assert_eq!(scrollback.lines[0].text.as_ref(), "line0");
+    assert_eq!(scrollback.lines[5].text.as_ref(), "line5");
+    assert_eq!(snapshot.stats.scrollback_lines_dropped, 0);
 }
 
 #[test]
@@ -2399,6 +2499,7 @@ fn pane_manager_last_seq_reports_latest_polled_event() {
                         title_changed: false,
                         modes_changed: false,
                         scrollback_changed: false,
+                        scrollback_lines_dropped: 0,
                     },
                 )) as Box<dyn SurfaceBackend + Send>)
             }),
@@ -2425,6 +2526,7 @@ fn pane_manager_attach_detach_happy_path_preserves_manager_state() {
         title_changed: false,
         modes_changed: false,
         scrollback_changed: false,
+        scrollback_lines_dropped: 0,
     };
     let (mut manager, pane_id, pty_shared, surface_shared) = manager_with_attach_process(
         vec![None, Some(output_frame(1, b"attached output"))],
@@ -2604,6 +2706,7 @@ fn pane_manager_attach_output_reaches_surface_and_transcript_after_detach() {
             title_changed: false,
             modes_changed: false,
             scrollback_changed: true,
+            scrollback_lines_dropped: 0,
         },
         None,
     );
@@ -3137,6 +3240,7 @@ fn pane_manager_event_subscriptions_and_sink_receive_future_events() {
         title_changed: false,
         modes_changed: false,
         scrollback_changed: true,
+        scrollback_lines_dropped: 0,
     };
     let backend = FakeSurfaceBackend::new(Arc::clone(&shared), Size::new(8, 16), update);
     let mut manager = PaneManager::new(PaneManagerConfig::default());
@@ -3191,6 +3295,7 @@ fn pane_manager_output_event_includes_transcript_offset_when_enabled() {
             title_changed: false,
             modes_changed: false,
             scrollback_changed: false,
+            scrollback_lines_dropped: 0,
         },
     );
     let mut manager = PaneManager::new(PaneManagerConfig::default());
@@ -3726,6 +3831,7 @@ fn pane_manager_dump_repro_redacts_spawn_metadata_and_keeps_event_history() {
                         title_changed: false,
                         modes_changed: false,
                         scrollback_changed: false,
+                        scrollback_lines_dropped: 0,
                     },
                 )) as Box<dyn SurfaceBackend + Send>)
             }),

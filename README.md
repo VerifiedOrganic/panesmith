@@ -26,11 +26,11 @@ The central rule is practical:
 
 ## Status
 
-Panesmith is pre-1.0. The core runtime, vt100-backed surface, ratatui widget,
-event stream, transcript capture, repro dumps, and Unix fullscreen attach path
-are implemented. The public API is usable, but some higher-level host features
-such as selection, search, and built-in scrollback browsing are intentionally
-left to applications for now.
+Panesmith is pre-1.0. The core runtime, vt100-backed surface, bounded
+scrollback retention, ratatui widget, event stream, transcript capture, repro
+dumps, and Unix fullscreen attach path are implemented. The public API is
+usable, but some higher-level host features such as selection, search, and
+built-in scrollback browsing are intentionally left to applications for now.
 
 ## Quick Start
 

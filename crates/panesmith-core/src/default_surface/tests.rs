@@ -1,6 +1,32 @@
 use super::*;
 use crate::{CellWidth, ColorSpec, MouseMode, PaneError, SurfaceBackend};
 
+fn numbered_lines(count: usize) -> Vec<u8> {
+    let mut out = String::new();
+    for i in 0..count {
+        if i > 0 {
+            out.push_str("\r\n");
+        }
+        out.push_str(&format!("line{i}"));
+    }
+    out.into_bytes()
+}
+
+fn row_text(row: &crate::SurfaceRow<'_>) -> String {
+    row.cells
+        .iter()
+        .map(|cell| cell.text.as_ref())
+        .collect::<String>()
+}
+
+fn scrollback_text(scrollback: &crate::ScrollbackSnapshot<'_>) -> Vec<String> {
+    scrollback
+        .lines
+        .iter()
+        .map(|line| line.text.clone().into_owned())
+        .collect()
+}
+
 #[test]
 fn default_surface_backend_rejects_single_row_surface() {
     let err =
@@ -115,4 +141,76 @@ fn default_surface_matches_shared_engine_for_representative_fixture() {
         wrapper.scrollback().to_owned_snapshot().lines[0].row.cells[0].width,
         CellWidth::Single
     );
+}
+
+#[test]
+fn default_surface_scrollback_remains_bounded_after_large_output() {
+    let mut backend = DefaultSurfaceBackend::new(
+        PaneId::new(6),
+        Size::new(2, 8),
+        ScrollbackConfig::bounded_lines(3).expect("bounded scrollback config"),
+    )
+    .expect("surface should initialize");
+
+    let update = backend
+        .feed(&numbered_lines(8))
+        .expect("numbered output should parse");
+
+    let scrollback = backend.scrollback().to_owned_snapshot();
+    let snapshot = backend.snapshot().to_owned_snapshot();
+    assert_eq!(scrollback.lines.len(), 3);
+    assert_eq!(
+        scrollback_text(&scrollback),
+        vec![
+            "line3".to_string(),
+            "line4".to_string(),
+            "line5".to_string()
+        ]
+    );
+    assert_eq!(row_text(&snapshot.rows[0]), "line6");
+    assert_eq!(row_text(&snapshot.rows[1]), "line7");
+    assert_eq!(update.scrollback_lines_dropped, 3);
+}
+
+#[test]
+fn default_surface_unlimited_scrollback_is_default() {
+    let mut backend =
+        DefaultSurfaceBackend::new(PaneId::new(7), Size::new(2, 8), ScrollbackConfig::default())
+            .expect("surface should initialize");
+
+    let update = backend
+        .feed(&numbered_lines(8))
+        .expect("numbered output should parse");
+
+    let scrollback = backend.scrollback().to_owned_snapshot();
+    assert_eq!(scrollback.lines.len(), 6);
+    assert_eq!(scrollback_text(&scrollback)[0], "line0");
+    assert_eq!(update.scrollback_lines_dropped, 0);
+}
+
+#[test]
+fn default_surface_preserves_main_scrollback_while_alternate_screen_scrolls() {
+    let mut backend = DefaultSurfaceBackend::new(
+        PaneId::new(8),
+        Size::new(2, 8),
+        ScrollbackConfig::bounded_lines(2).expect("bounded scrollback config"),
+    )
+    .expect("surface should initialize");
+
+    backend
+        .feed(b"main0\r\nmain1\r\nmain2")
+        .expect("main-screen output should parse");
+    let main_scrollback = backend.scrollback().to_owned_snapshot();
+
+    backend
+        .feed(b"\x1b[?1049halt0\r\nalt1\r\nalt2\r\nalt3")
+        .expect("alternate-screen output should parse");
+    assert!(backend.snapshot().modes.alternate_screen);
+    assert!(backend.scrollback().lines.is_empty());
+
+    backend
+        .feed(b"\x1b[?1049l")
+        .expect("leaving alternate screen should parse");
+    assert!(!backend.snapshot().modes.alternate_screen);
+    assert_eq!(backend.scrollback().to_owned_snapshot(), main_scrollback);
 }

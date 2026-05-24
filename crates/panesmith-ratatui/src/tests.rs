@@ -15,7 +15,7 @@ fn widget_keeps_track_of_the_target_pane() {
         surface: SurfaceSnapshot::blank(Size::new(1, 1)),
         cursor: CursorState::hidden(),
         modes: TerminalModes::default(),
-        stats: PaneStats,
+        stats: PaneStats::default(),
     };
     let widget = TerminalPaneWidget::new(&snapshot);
     assert_eq!(widget.pane_id(), PaneId::new(3));
