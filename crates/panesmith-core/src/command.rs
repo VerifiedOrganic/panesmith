@@ -11,6 +11,7 @@ use crate::{KillReason, PaneId, Size};
 
 /// Internal command enum for pane operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PaneCommand {
     /// Spawn a new pane with the given configuration.
