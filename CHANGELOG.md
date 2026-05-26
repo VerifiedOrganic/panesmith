@@ -7,6 +7,13 @@ Panesmith crates.
 
 No unreleased changes.
 
+## 0.2.1 - 2026-05-26
+
+- added explicit child process environment policies for daemon embedders,
+  including inherited, cleared, and allowlisted environments with explicit
+  variable overrides and `TERM` fallback support in the default portable-pty
+  backend
+
 ## 0.2.0 - 2026-05-24
 
 - added bounded terminal scrollback retention with manager defaults, per-pane

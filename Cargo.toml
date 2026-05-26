@@ -18,13 +18,13 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 publish = ["crates-io"]
 repository = "https://github.com/VerifiedOrganic/panesmith"
-version = "0.2.0"
+version = "0.2.1"
 
 [workspace.dependencies]
-panesmith-attach = { path = "crates/panesmith-attach", version = "0.2.0" }
-panesmith-core = { path = "crates/panesmith-core", version = "0.2.0" }
-panesmith-ratatui = { path = "crates/panesmith-ratatui", version = "0.2.0" }
-panesmith-vt100 = { path = "crates/panesmith-vt100", version = "0.2.0" }
+panesmith-attach = { path = "crates/panesmith-attach", version = "0.2.1" }
+panesmith-core = { path = "crates/panesmith-core", version = "0.2.1" }
+panesmith-ratatui = { path = "crates/panesmith-ratatui", version = "0.2.1" }
+panesmith-vt100 = { path = "crates/panesmith-vt100", version = "0.2.1" }
 crossterm = "0.28"
 portable-pty = "0.9.0"
 ratatui = { version = "0.30", default-features = false, features = ["std"] }

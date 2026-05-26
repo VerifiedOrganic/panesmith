@@ -397,9 +397,8 @@ fn effective_child_environment(
     }
 
     if let Some(term) = &config.term_fallback {
-        if !envs.contains_key(&OsString::from("TERM")) {
-            envs.insert(OsString::from("TERM"), OsString::from(term));
-        }
+        envs.entry(OsString::from("TERM"))
+            .or_insert_with(|| OsString::from(term));
     }
 
     for (key, value) in &config.env {
