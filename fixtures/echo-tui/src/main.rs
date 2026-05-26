@@ -15,6 +15,7 @@ const ARGS_COMMAND: &str = "__PANESMITH_ARGS__";
 const PID_COMMAND: &str = "__PANESMITH_PID__";
 const EXIT_COMMAND: &str = "__PANESMITH_EXIT__";
 const ANSI_COMMAND: &str = "__PANESMITH_ANSI__";
+const ENV_KEYS_COMMAND: &str = "__PANESMITH_ENV_KEYS__";
 const ENV_PREFIX: &str = "__PANESMITH_ENV__:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +71,15 @@ where
 
     if line == ANSI_COMMAND {
         writeln!(stdout, "\x1b[31mred\x1b[0m")?;
+        return Ok(FixtureAction::Echo);
+    }
+
+    if line == ENV_KEYS_COMMAND {
+        let mut keys = env::vars_os()
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        keys.sort();
+        writeln!(stdout, "env-keys:{}", keys.join(","))?;
         return Ok(FixtureAction::Echo);
     }
 

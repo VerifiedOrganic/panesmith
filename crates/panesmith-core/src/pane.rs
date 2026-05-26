@@ -1217,6 +1217,43 @@ impl Default for KillConfig {
     }
 }
 
+/// Policy for constructing the child process environment.
+///
+/// The default preserves historical behavior by inheriting every environment
+/// variable from the parent process before applying [`PaneConfig::env`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ChildEnvironmentPolicy {
+    /// Inherit all parent process environment variables.
+    #[default]
+    Inherit,
+    /// Start with an empty environment.
+    Clear,
+    /// Inherit only the named parent process environment variables.
+    Allowlist(Vec<String>),
+}
+
+impl ChildEnvironmentPolicy {
+    /// Inherits all parent environment variables.
+    pub const fn inherit() -> Self {
+        Self::Inherit
+    }
+
+    /// Starts the child process with no inherited environment variables.
+    pub const fn clear() -> Self {
+        Self::Clear
+    }
+
+    /// Inherits only the named parent environment variables.
+    pub fn allowlist<I, S>(keys: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self::Allowlist(keys.into_iter().map(Into::into).collect())
+    }
+}
+
 /// Describes a child process and pane behavior.
 ///
 /// # Defaults
@@ -1228,6 +1265,8 @@ impl Default for KillConfig {
 /// | `command`   | `"cmd"` on Windows, `"sh"` elsewhere                    |
 /// | `cwd`       | `None` (inherits process cwd)                           |
 /// | `env`       | empty map                                               |
+/// | `env_policy`| `ChildEnvironmentPolicy::Inherit`                       |
+/// | `term_fallback`| `None`                                               |
 /// | `size`      | `Size { rows: 24, cols: 80 }`                           |
 /// | `scrollback`| `None` (inherit the manager default)                    |
 /// | `transcript`| `TranscriptConfig { mode: TranscriptMode::Disabled }`   |
@@ -1248,6 +1287,10 @@ pub struct PaneConfig {
     pub cwd: Option<PathBuf>,
     /// Additional environment variables for the child process.
     pub env: BTreeMap<String, String>,
+    /// Parent environment inheritance policy for the child process.
+    pub env_policy: ChildEnvironmentPolicy,
+    /// Fallback `TERM` value used when no inherited or explicit `TERM` exists.
+    pub term_fallback: Option<String>,
     /// Initial terminal size.
     pub size: Size,
     /// Optional pane-specific scrollback retention policy.
@@ -1284,6 +1327,10 @@ impl<'de> serde::Deserialize<'de> for PaneConfig {
             command: CommandSpec,
             cwd: Option<PathBuf>,
             env: BTreeMap<String, String>,
+            #[serde(default)]
+            env_policy: ChildEnvironmentPolicy,
+            #[serde(default)]
+            term_fallback: Option<String>,
             size: Size,
             #[serde(default)]
             scrollback: Option<ScrollbackConfig>,
@@ -1303,6 +1350,8 @@ impl<'de> serde::Deserialize<'de> for PaneConfig {
             command: raw.command,
             cwd: raw.cwd,
             env: raw.env,
+            env_policy: raw.env_policy,
+            term_fallback: raw.term_fallback,
             size: raw.size,
             scrollback: raw.scrollback,
             transcript: raw.transcript,
@@ -1387,6 +1436,32 @@ impl PaneConfig {
         self
     }
 
+    /// Sets how the child process inherits parent environment variables.
+    pub fn with_env_policy(mut self, policy: ChildEnvironmentPolicy) -> Self {
+        self.env_policy = policy;
+        self
+    }
+
+    /// Clears the inherited child process environment before applying explicit variables.
+    pub fn with_clear_env(self) -> Self {
+        self.with_env_policy(ChildEnvironmentPolicy::Clear)
+    }
+
+    /// Inherits only the named parent environment variables.
+    pub fn with_env_allowlist<I, S>(self, keys: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.with_env_policy(ChildEnvironmentPolicy::allowlist(keys))
+    }
+
+    /// Sets a fallback `TERM` value when the inherited and explicit environment omit it.
+    pub fn with_term_fallback(mut self, term: impl Into<String>) -> Self {
+        self.term_fallback = Some(term.into());
+        self
+    }
+
     /// Sets the initial terminal size.
     pub fn with_size(mut self, size: Size) -> Self {
         self.size = size;
@@ -1462,6 +1537,8 @@ impl Default for PaneConfig {
             command: CommandSpec::new(default_shell()),
             cwd: None,
             env: BTreeMap::new(),
+            env_policy: ChildEnvironmentPolicy::default(),
+            term_fallback: None,
             size: Size::new(24, 80),
             scrollback: None,
             transcript: TranscriptConfig::default(),

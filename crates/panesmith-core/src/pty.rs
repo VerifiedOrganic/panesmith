@@ -1,6 +1,9 @@
 //! PTY abstractions and the default portable-pty backend.
 
 use std::collections::VecDeque;
+use std::env;
+#[cfg(unix)]
+use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
-use crate::{IoOperation, KillConfig, PaneConfig, PaneError, Result, Size};
+use crate::{ChildEnvironmentPolicy, IoOperation, KillConfig, PaneConfig, PaneError, Result, Size};
 
 static NEXT_SYNTHETIC_PROCESS_ID: AtomicU64 = AtomicU64::new(1);
 const DEFAULT_PTY_OUTPUT_FRAME_QUEUE_CAPACITY: usize = 128;
@@ -251,16 +254,7 @@ impl PtyBackend for PortablePtyBackend {
                 message: error.to_string(),
             })?;
 
-        let mut command = CommandBuilder::new(config.program());
-        for arg in config.args() {
-            command.arg(arg);
-        }
-        if let Some(cwd) = &config.cwd {
-            command.cwd(cwd);
-        }
-        for (key, value) in &config.env {
-            command.env(key, value);
-        }
+        let command = build_command(config);
 
         let writer = pty_pair
             .master
@@ -311,6 +305,118 @@ impl PtyBackend for PortablePtyBackend {
             reader_thread: Some(reader_thread),
         })
     }
+}
+
+fn build_command(config: &PaneConfig) -> CommandBuilder {
+    #[cfg(unix)]
+    if should_wrap_command_env(config) {
+        return build_unix_env_wrapper_command(config);
+    }
+
+    let mut command = CommandBuilder::new(config.program());
+    for arg in config.args() {
+        command.arg(arg);
+    }
+    if let Some(cwd) = &config.cwd {
+        command.cwd(cwd);
+    }
+    apply_child_environment(&mut command, config);
+    command
+}
+
+fn apply_child_environment(command: &mut CommandBuilder, config: &PaneConfig) {
+    match &config.env_policy {
+        ChildEnvironmentPolicy::Inherit => {}
+        ChildEnvironmentPolicy::Clear => command.env_clear(),
+        ChildEnvironmentPolicy::Allowlist(keys) => {
+            command.env_clear();
+            for key in keys {
+                if let Some(value) = env::var_os(key.as_str()) {
+                    command.env(key.as_str(), value);
+                }
+            }
+        }
+    }
+
+    if let Some(term) = &config.term_fallback {
+        if command.get_env("TERM").is_none() {
+            command.env("TERM", term);
+        }
+    }
+
+    for (key, value) in &config.env {
+        command.env(key, value);
+    }
+}
+
+#[cfg(unix)]
+fn should_wrap_command_env(config: &PaneConfig) -> bool {
+    !matches!(config.env_policy, ChildEnvironmentPolicy::Inherit)
+}
+
+#[cfg(unix)]
+fn build_unix_env_wrapper_command(config: &PaneConfig) -> CommandBuilder {
+    let mut command = CommandBuilder::new("/usr/bin/env");
+    command.arg("-i");
+
+    for (key, value) in effective_child_environment(config) {
+        command.arg(env_assignment(&key, &value));
+    }
+
+    command.arg(config.program());
+    for arg in config.args() {
+        command.arg(arg);
+    }
+
+    if let Some(cwd) = &config.cwd {
+        command.cwd(cwd);
+    }
+
+    command.env_clear();
+    command
+}
+
+#[cfg(unix)]
+fn effective_child_environment(
+    config: &PaneConfig,
+) -> std::collections::BTreeMap<OsString, OsString> {
+    let mut envs = std::collections::BTreeMap::new();
+
+    match &config.env_policy {
+        ChildEnvironmentPolicy::Inherit => {
+            envs.extend(env::vars_os());
+        }
+        ChildEnvironmentPolicy::Clear => {}
+        ChildEnvironmentPolicy::Allowlist(keys) => {
+            for key in keys {
+                if let Some(value) = env::var_os(key.as_str()) {
+                    envs.insert(OsString::from(key), value);
+                }
+            }
+        }
+    }
+
+    if let Some(term) = &config.term_fallback {
+        if !envs.contains_key(&OsString::from("TERM")) {
+            envs.insert(OsString::from("TERM"), OsString::from(term));
+        }
+    }
+
+    for (key, value) in &config.env {
+        envs.insert(OsString::from(key), OsString::from(value));
+    }
+
+    envs
+}
+
+#[cfg(unix)]
+fn env_assignment(key: &OsStr, value: &OsStr) -> OsString {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+    let mut bytes = key.as_bytes().to_vec();
+    bytes.push(b'=');
+    bytes.extend(value.as_bytes());
+    OsString::from_vec(bytes)
 }
 
 /// Concrete PTY process for [`PortablePtyBackend`].

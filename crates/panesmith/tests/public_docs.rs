@@ -74,6 +74,9 @@ fn user_docs_cover_core_workflows() {
         "`PaneManager::spawn`",
         "`TerminalPaneWidget`",
         "`PaneManager::resize`",
+        "Child Environment Policy",
+        "`with_clear_env`",
+        "`with_env_allowlist`",
         "`PaneManager::scrollback`",
     ] {
         assert!(
