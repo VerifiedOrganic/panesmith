@@ -18,6 +18,14 @@ fn fixture_path() -> PathBuf {
         .expect("echo-tui fixture path should be available to integration tests")
 }
 
+fn fixture_env_key() -> &'static str {
+    if env::var_os("CARGO_BIN_EXE_echo-tui").is_some() {
+        "CARGO_BIN_EXE_echo-tui"
+    } else {
+        "CARGO_BIN_EXE_echo_tui"
+    }
+}
+
 fn row_text(row: &SurfaceRow<'_>) -> String {
     row.cells.iter().map(|cell| cell.text.as_ref()).collect()
 }
@@ -358,6 +366,73 @@ fn pane_manager_runtime_supports_spawn_write_snapshot_resize_and_remove() {
     );
     #[cfg(unix)]
     wait_for_pid_absent(child_pid, Duration::from_secs(3));
+}
+
+#[test]
+fn pane_manager_spawn_uses_default_backend_environment_policy() {
+    let fixture_key = fixture_env_key();
+    let fixture_program = fixture_path().to_string_lossy().into_owned();
+    let mut manager = PaneManager::new(PaneManagerConfig::default());
+    let pane_id = manager
+        .spawn(
+            PaneConfig::command(fixture_program)
+                .with_clear_env()
+                .with_env("PANESMITH_MANAGER_ENV", "present")
+                .with_transcript(TranscriptConfig::new(TranscriptMode::PlainText))
+                .with_kill(KillConfig::new(Duration::from_millis(50), true)),
+        )
+        .expect("fixture should spawn through PaneManager");
+    let _spawn_events = drain_now(&mut manager);
+
+    manager
+        .write_bytes(pane_id, b"__PANESMITH_ENV__:PANESMITH_MANAGER_ENV\n")
+        .expect("explicit env probe should reach the child process");
+    wait_for_snapshot_contains(
+        &mut manager,
+        pane_id,
+        "env:PANESMITH_MANAGER_ENV=present",
+        Duration::from_secs(3),
+    );
+    let transcript = manager
+        .plain_transcript(pane_id)
+        .expect("plain transcript should be retained");
+    assert!(
+        transcript
+            .lines()
+            .any(|line| line == "env:PANESMITH_MANAGER_ENV=present"),
+        "explicit environment value should be visible in transcript: {transcript:?}"
+    );
+
+    manager
+        .write_bytes(
+            pane_id,
+            format!("__PANESMITH_ENV__:{fixture_key}\n").as_bytes(),
+        )
+        .expect("disallowed parent env probe should reach the child process");
+    wait_for_snapshot_contains(
+        &mut manager,
+        pane_id,
+        &format!("env:{fixture_key}="),
+        Duration::from_secs(3),
+    );
+    let expected_absent_line = format!("env:{fixture_key}=");
+    let transcript = manager
+        .plain_transcript(pane_id)
+        .expect("plain transcript should be retained");
+    assert!(
+        transcript.lines().any(|line| line == expected_absent_line),
+        "disallowed parent environment value should not be visible in transcript: {transcript:?}"
+    );
+
+    manager
+        .write_bytes(pane_id, b"__PANESMITH_EXIT__\n")
+        .expect("fixture exit request should write");
+    wait_for(&mut manager, pane_id, Duration::from_secs(3), |state, _| {
+        matches!(state, PaneState::Exited { code: Some(0) })
+    });
+    manager
+        .remove(pane_id)
+        .expect("exited pane should be removable");
 }
 
 #[test]

@@ -17,6 +17,8 @@ fn pane_config_default_is_shell() {
     assert!(config.title.is_none());
     assert!(config.cwd.is_none());
     assert!(config.env.is_empty());
+    assert_eq!(config.env_policy, ChildEnvironmentPolicy::Inherit);
+    assert_eq!(config.term_fallback, None);
 }
 
 #[test]
@@ -50,6 +52,8 @@ fn pane_config_fluent_setters() {
         .with_title("my pane")
         .with_cwd("/tmp")
         .with_env("FOO", "bar")
+        .with_env_allowlist(["PATH", "HOME"])
+        .with_term_fallback("xterm-256color")
         .with_size(Size::new(10, 20))
         .with_scrollback(ScrollbackConfig::new(5_000, 512 * 1024).unwrap())
         .with_transcript(TranscriptConfig::new(TranscriptMode::RawBytes))
@@ -62,6 +66,11 @@ fn pane_config_fluent_setters() {
     assert_eq!(config.title, Some("my pane".into()));
     assert_eq!(config.cwd, Some(PathBuf::from("/tmp")));
     assert_eq!(config.env.get("FOO"), Some(&"bar".into()));
+    assert_eq!(
+        config.env_policy,
+        ChildEnvironmentPolicy::Allowlist(vec!["PATH".into(), "HOME".into()])
+    );
+    assert_eq!(config.term_fallback.as_deref(), Some("xterm-256color"));
     assert_eq!(config.size, Size::new(10, 20));
     assert_eq!(
         config.scrollback.expect("pane-level scrollback").max_lines,

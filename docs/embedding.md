@@ -16,6 +16,49 @@ The manager drains pending PTY output before returning snapshots, scrollback,
 transcripts, and last-sequence information. Hosts do not need a separate
 surface polling API for normal rendering.
 
+## Child Environment Policy
+
+`PaneConfig` defaults to inheriting the parent process environment and then
+applying `PaneConfig::env`, preserving the behavior older Panesmith embedders
+expect. Daemon embedders that run untrusted, agent-managed, or tenant-scoped
+workloads should set an explicit environment policy instead of relying on that
+default.
+
+Use `with_clear_env` to start from an empty child environment:
+
+```rust
+# use panesmith_core::PaneConfig;
+let pane_config = PaneConfig::command("/opt/agent/bin/agent")
+    .with_clear_env()
+    .with_env("PATH", "/usr/bin:/bin")
+    .with_env("HOME", "/srv/panes/session-42")
+    .with_env("PANESMITH_SESSION_ID", "session-42")
+    .with_term_fallback("xterm-256color");
+```
+
+Use `with_env_allowlist` when a pane should inherit only a small known-safe
+set of parent variables:
+
+```rust
+# use panesmith_core::PaneConfig;
+let pane_config = PaneConfig::shell()
+    .with_env_allowlist(["PATH", "HOME", "TERM"])
+    .with_env("PANTHEON_RUN_ID", "run-123")
+    .with_env("PATH", "/opt/pantheon/bin:/usr/bin:/bin")
+    .with_term_fallback("xterm-256color");
+```
+
+Policy order is deterministic: Panesmith first applies the inheritance policy,
+then fills `TERM` from `with_term_fallback` only when no `TERM` is present, and
+finally applies explicit `with_env` values. Explicit values always override
+inherited values and the fallback.
+
+This is an environment boundary, not a sandbox. It prevents accidental leakage
+of daemon environment variables such as tokens, API keys, socket paths, tracing
+configuration, or cloud credentials into the child process. It does not change
+the child process user, filesystem access, working directory, open file
+descriptors, network access, PTY semantics, or host authorization model.
+
 `PaneManager::kill` requests child termination and transitions the pane to
 `PaneState::Killed`, but it intentionally keeps the manager-owned runtime entry
 alive. That lets callers inspect final snapshots, scrollback, transcripts,

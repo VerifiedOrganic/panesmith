@@ -9,8 +9,8 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use panesmith_core::{
-    KillConfig, OverflowStats, PaneConfig, PortablePtyBackend, PtyBackend, PtyFrame, PtyProcess,
-    Size,
+    ChildEnvironmentPolicy, KillConfig, OverflowStats, PaneConfig, PortablePtyBackend, PtyBackend,
+    PtyFrame, PtyProcess, Size,
 };
 
 static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(1);
@@ -20,6 +20,14 @@ fn fixture_path() -> PathBuf {
         .or_else(|_| env::var("CARGO_BIN_EXE_echo_tui"))
         .map(PathBuf::from)
         .expect("echo-tui fixture path should be available to integration tests")
+}
+
+fn fixture_env_key() -> &'static str {
+    if env::var_os("CARGO_BIN_EXE_echo-tui").is_some() {
+        "CARGO_BIN_EXE_echo-tui"
+    } else {
+        "CARGO_BIN_EXE_echo_tui"
+    }
 }
 
 fn spawn_fixture(config: PaneConfig) -> impl PtyProcess {
@@ -68,6 +76,61 @@ fn wait_for_output(process: &mut impl PtyProcess, needle: &str, timeout: Duratio
     }
 
     panic!("timed out waiting for {needle:?}; saw output {seen:?}");
+}
+
+fn wait_for_output_line(process: &mut impl PtyProcess, prefix: &str, timeout: Duration) -> String {
+    let deadline = Instant::now() + timeout;
+    let mut seen = String::new();
+
+    while Instant::now() < deadline {
+        while let Some(frame) = process.try_recv() {
+            match frame {
+                PtyFrame::Output { bytes, .. } => {
+                    seen.push_str(&normalize(&bytes));
+                    if let Some(start) = seen.find(prefix) {
+                        if let Some(end) = seen[start..].find('\n') {
+                            return seen[start..start + end].to_string();
+                        }
+                    }
+                }
+                PtyFrame::Overflow {
+                    dropped_frames,
+                    dropped_bytes,
+                    ..
+                } => {
+                    panic!(
+                        "unexpected PTY overflow while waiting for line {prefix:?}: dropped {dropped_frames} frame(s) / {dropped_bytes} byte(s)"
+                    );
+                }
+                PtyFrame::Error { message, .. } => {
+                    panic!("unexpected PTY error while waiting for line {prefix:?}: {message}");
+                }
+                PtyFrame::Exited { code, .. } => {
+                    panic!(
+                        "process exited early with code {code:?} while waiting for line {prefix:?}"
+                    );
+                }
+                PtyFrame::CursorPositionRequest { .. } => {}
+            }
+        }
+
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    panic!("timed out waiting for line {prefix:?}; saw output {seen:?}");
+}
+
+fn wait_for_env_keys(process: &mut impl PtyProcess, timeout: Duration) -> Vec<String> {
+    let line = wait_for_output_line(process, "env-keys:", timeout);
+    let keys = line
+        .strip_prefix("env-keys:")
+        .expect("env key probe should report with the env-keys prefix");
+
+    if keys.is_empty() {
+        Vec::new()
+    } else {
+        keys.split(',').map(str::to_owned).collect()
+    }
 }
 
 fn wait_for_exit(process: &mut impl PtyProcess, timeout: Duration) -> Option<i32> {
@@ -220,6 +283,143 @@ fn spawn_applies_args_cwd_and_env() {
         .expect("fixture exit request should write");
     assert_eq!(wait_for_exit(&mut process, Duration::from_secs(3)), Some(0));
     fs::remove_dir_all(cwd).expect("temporary fixture directory should be removed");
+}
+
+#[test]
+fn spawn_default_inherits_parent_environment() {
+    let fixture_key = fixture_env_key();
+    let fixture_value = env::var(fixture_key).expect("fixture env key should be present");
+    let fixture_program = fixture_path().to_string_lossy().into_owned();
+    let mut process = spawn_fixture(PaneConfig::command(fixture_program));
+    let writer = process.writer();
+
+    writer
+        .write_bytes(format!("__PANESMITH_ENV__:{fixture_key}\n").as_bytes())
+        .expect("fixture env probe should write");
+    wait_for_output(
+        &mut process,
+        &format!("env:{fixture_key}={fixture_value}\n"),
+        Duration::from_secs(3),
+    );
+
+    writer
+        .write_bytes(b"__PANESMITH_EXIT__\n")
+        .expect("fixture exit request should write");
+    assert_eq!(wait_for_exit(&mut process, Duration::from_secs(3)), Some(0));
+}
+
+#[test]
+fn spawn_clear_env_sets_only_explicit_environment() {
+    let fixture_program = fixture_path().to_string_lossy().into_owned();
+    let config = PaneConfig::command(fixture_program)
+        .with_env_policy(ChildEnvironmentPolicy::clear())
+        .with_env("PANESMITH_ALLOWED", "present");
+    let mut process = spawn_fixture(config);
+    let writer = process.writer();
+
+    writer
+        .write_bytes(b"__PANESMITH_ENV_KEYS__\n")
+        .expect("fixture env key probe should write");
+    assert_eq!(
+        wait_for_env_keys(&mut process, Duration::from_secs(3)),
+        vec!["PANESMITH_ALLOWED".to_string()]
+    );
+
+    writer
+        .write_bytes(b"__PANESMITH_ENV__:PANESMITH_ALLOWED\n")
+        .expect("fixture env probe should write");
+    wait_for_output(
+        &mut process,
+        "env:PANESMITH_ALLOWED=present\n",
+        Duration::from_secs(3),
+    );
+
+    writer
+        .write_bytes(b"__PANESMITH_EXIT__\n")
+        .expect("fixture exit request should write");
+    assert_eq!(wait_for_exit(&mut process, Duration::from_secs(3)), Some(0));
+}
+
+#[test]
+fn spawn_allowlist_excludes_unlisted_parent_environment() {
+    let fixture_key = fixture_env_key();
+    let fixture_program = fixture_path().to_string_lossy().into_owned();
+    let config = PaneConfig::command(fixture_program).with_env_allowlist(["PATH", "HOME", "TERM"]);
+    let mut process = spawn_fixture(config);
+    let writer = process.writer();
+
+    writer
+        .write_bytes(format!("__PANESMITH_ENV__:{fixture_key}\n").as_bytes())
+        .expect("fixture env probe should write");
+    wait_for_output(
+        &mut process,
+        &format!("env:{fixture_key}=\n"),
+        Duration::from_secs(3),
+    );
+
+    if let Ok(path) = env::var("PATH") {
+        writer
+            .write_bytes(b"__PANESMITH_ENV__:PATH\n")
+            .expect("fixture env probe should write");
+        wait_for_output(
+            &mut process,
+            &format!("env:PATH={path}\n"),
+            Duration::from_secs(3),
+        );
+    }
+
+    writer
+        .write_bytes(b"__PANESMITH_EXIT__\n")
+        .expect("fixture exit request should write");
+    assert_eq!(wait_for_exit(&mut process, Duration::from_secs(3)), Some(0));
+}
+
+#[test]
+fn spawn_explicit_env_overrides_allowlisted_parent_environment() {
+    let fixture_program = fixture_path().to_string_lossy().into_owned();
+    let config = PaneConfig::command(fixture_program)
+        .with_env_policy(ChildEnvironmentPolicy::allowlist(["PATH"]))
+        .with_env("PATH", "/panesmith/override");
+    let mut process = spawn_fixture(config);
+    let writer = process.writer();
+
+    writer
+        .write_bytes(b"__PANESMITH_ENV__:PATH\n")
+        .expect("fixture env probe should write");
+    wait_for_output(
+        &mut process,
+        "env:PATH=/panesmith/override\n",
+        Duration::from_secs(3),
+    );
+
+    writer
+        .write_bytes(b"__PANESMITH_EXIT__\n")
+        .expect("fixture exit request should write");
+    assert_eq!(wait_for_exit(&mut process, Duration::from_secs(3)), Some(0));
+}
+
+#[test]
+fn spawn_term_fallback_sets_term_when_missing() {
+    let fixture_program = fixture_path().to_string_lossy().into_owned();
+    let config = PaneConfig::command(fixture_program)
+        .with_clear_env()
+        .with_term_fallback("xterm-256color");
+    let mut process = spawn_fixture(config);
+    let writer = process.writer();
+
+    writer
+        .write_bytes(b"__PANESMITH_ENV__:TERM\n")
+        .expect("fixture env probe should write");
+    wait_for_output(
+        &mut process,
+        "env:TERM=xterm-256color\n",
+        Duration::from_secs(3),
+    );
+
+    writer
+        .write_bytes(b"__PANESMITH_EXIT__\n")
+        .expect("fixture exit request should write");
+    assert_eq!(wait_for_exit(&mut process, Duration::from_secs(3)), Some(0));
 }
 
 #[test]

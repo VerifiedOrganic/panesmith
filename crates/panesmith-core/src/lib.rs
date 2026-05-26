@@ -46,14 +46,14 @@ pub use manager::{
     ScrollbackReader, TranscriptReader,
 };
 pub use pane::{
-    AttachConfig, BackspaceEncoding, CellAttrs, CellStyle, CellWidth, ColorSpec, CommandSpec,
-    CursorPosition, CursorState, EnterEncoding, InputConfig, KillConfig, KillReason, MouseMode,
-    OwnedPaneSnapshot, OwnedScrollbackLine, OwnedScrollbackSnapshot, OwnedSurfaceCell,
-    OwnedSurfaceRow, OwnedSurfaceSnapshot, PaneConfig, PaneId, PaneInteractionMode, PaneSnapshot,
-    PaneState, PaneStats, PasteNewlinePolicy, ReplayBackendKind, ScrollbackConfig, ScrollbackLine,
-    ScrollbackSnapshot, Size, SurfaceBackend, SurfaceBackendMetadata, SurfaceCell, SurfaceConfig,
-    SurfaceRow, SurfaceSnapshot, SurfaceUpdate, TerminalModes, TerminalViewport,
-    TerminalViewportMetrics, TranscriptConfig, TranscriptMode,
+    AttachConfig, BackspaceEncoding, CellAttrs, CellStyle, CellWidth, ChildEnvironmentPolicy,
+    ColorSpec, CommandSpec, CursorPosition, CursorState, EnterEncoding, InputConfig, KillConfig,
+    KillReason, MouseMode, OwnedPaneSnapshot, OwnedScrollbackLine, OwnedScrollbackSnapshot,
+    OwnedSurfaceCell, OwnedSurfaceRow, OwnedSurfaceSnapshot, PaneConfig, PaneId,
+    PaneInteractionMode, PaneSnapshot, PaneState, PaneStats, PasteNewlinePolicy, ReplayBackendKind,
+    ScrollbackConfig, ScrollbackLine, ScrollbackSnapshot, Size, SurfaceBackend,
+    SurfaceBackendMetadata, SurfaceCell, SurfaceConfig, SurfaceRow, SurfaceSnapshot, SurfaceUpdate,
+    TerminalModes, TerminalViewport, TerminalViewportMetrics, TranscriptConfig, TranscriptMode,
 };
 pub use pty::{
     OverflowStats, PortablePtyBackend, PortablePtyProcess, PtyBackend, PtyFrame, PtyHandle,
