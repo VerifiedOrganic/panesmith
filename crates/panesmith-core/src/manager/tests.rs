@@ -3284,6 +3284,189 @@ fn pane_manager_event_subscriptions_and_sink_receive_future_events() {
 }
 
 #[test]
+fn pane_manager_default_event_log_retention_is_unlimited() {
+    let shared = Arc::new(Mutex::new(FakeSurfaceShared::default()));
+    let backend = FakeSurfaceBackend::new(
+        Arc::clone(&shared),
+        Size::new(24, 80),
+        SurfaceUpdate::default(),
+    );
+    let mut manager = PaneManager::new(PaneManagerConfig::default());
+    let pane_id = PaneId::new(14);
+    manager.insert_surface_for_testing(pane_id, None, Box::new(backend));
+
+    for cols in 80..85 {
+        manager
+            .resize(pane_id, Size::new(24, cols))
+            .expect("resize should emit an event");
+    }
+
+    let mut live_events = Vec::new();
+    manager.drain_events(&mut live_events);
+    assert_eq!(live_events.len(), 5);
+
+    let dump = manager
+        .dump_repro(pane_id, ReproDumpOptions::default())
+        .expect("dump_repro should preserve retained events");
+
+    assert_eq!(
+        dump.events
+            .iter()
+            .map(|event| event.seq)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5]
+    );
+    assert_eq!(dump.event_log_events_dropped, 0);
+    assert_eq!(
+        manager
+            .snapshot(pane_id)
+            .expect("pane should still exist")
+            .stats
+            .event_log_events_dropped,
+        0
+    );
+}
+
+#[test]
+fn pane_manager_bounded_event_log_retention_evicts_oldest_events() {
+    let shared = Arc::new(Mutex::new(FakeSurfaceShared::default()));
+    let backend = FakeSurfaceBackend::new(
+        Arc::clone(&shared),
+        Size::new(24, 80),
+        SurfaceUpdate::default(),
+    );
+    let mut manager = PaneManager::new(PaneManagerConfig::default().with_max_event_log_entries(3));
+    let pane_id = PaneId::new(15);
+    manager.insert_surface_for_testing(pane_id, None, Box::new(backend));
+
+    for cols in 80..85 {
+        manager
+            .resize(pane_id, Size::new(24, cols))
+            .expect("resize should emit an event");
+    }
+
+    let mut live_events = Vec::new();
+    manager.drain_events(&mut live_events);
+    assert_eq!(
+        live_events
+            .iter()
+            .map(|event| event.seq)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5],
+        "bounded retained history must not affect the live manager queue"
+    );
+
+    let dump = manager
+        .dump_repro(pane_id, ReproDumpOptions::default())
+        .expect("bounded event history should still dump repros");
+    assert_eq!(
+        dump.events
+            .iter()
+            .map(|event| event.seq)
+            .collect::<Vec<_>>(),
+        vec![3, 4, 5]
+    );
+    assert!(
+        dump.events
+            .iter()
+            .all(|event| matches!(event.kind, PaneEventKind::Resized(_))),
+        "dump should contain only retained resize events"
+    );
+    assert_eq!(dump.event_log_events_dropped, 2);
+    assert_eq!(
+        manager
+            .snapshot(pane_id)
+            .expect("pane should still exist")
+            .stats
+            .event_log_events_dropped,
+        2
+    );
+}
+
+#[test]
+fn pane_manager_disabled_event_log_retention_keeps_live_events_only() {
+    let shared = Arc::new(Mutex::new(FakeSurfaceShared::default()));
+    let backend = FakeSurfaceBackend::new(
+        Arc::clone(&shared),
+        Size::new(24, 80),
+        SurfaceUpdate::default(),
+    );
+    let mut manager = PaneManager::new(
+        PaneManagerConfig::default().with_event_log_retention(EventLogRetention::disabled()),
+    );
+    let pane_id = PaneId::new(16);
+    manager.insert_surface_for_testing(pane_id, None, Box::new(backend));
+
+    manager
+        .resize(pane_id, Size::new(24, 81))
+        .expect("first resize should emit an event");
+    manager
+        .resize(pane_id, Size::new(24, 82))
+        .expect("second resize should emit an event");
+
+    let mut live_events = Vec::new();
+    manager.drain_events(&mut live_events);
+    assert_eq!(
+        live_events
+            .iter()
+            .map(|event| event.seq)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+
+    let dump = manager
+        .dump_repro(pane_id, ReproDumpOptions::default())
+        .expect("disabled event history should still dump repros");
+    assert!(dump.events.is_empty());
+    assert_eq!(dump.event_log_events_dropped, 2);
+    assert_eq!(
+        manager
+            .snapshot(pane_id)
+            .expect("pane should still exist")
+            .stats
+            .event_log_events_dropped,
+        2
+    );
+}
+
+#[test]
+fn pane_manager_high_volume_output_does_not_exceed_event_log_cap() {
+    let shared = Arc::new(Mutex::new(FakeSurfaceShared::default()));
+    let backend = FakeSurfaceBackend::new(
+        Arc::clone(&shared),
+        Size::new(24, 80),
+        SurfaceUpdate::default(),
+    );
+    let cap = 17;
+    let mut manager = PaneManager::new(
+        PaneManagerConfig::default().with_event_log_retention(EventLogRetention::bounded(cap)),
+    );
+    let pane_id = PaneId::new(17);
+    manager.insert_surface_for_testing(pane_id, None, Box::new(backend));
+
+    for _ in 0..1_000 {
+        manager.feed_output_for_testing(pane_id, b"x".to_vec());
+    }
+
+    let pane = manager.panes.get(&pane_id).expect("pane should exist");
+    assert_eq!(pane.event_log.len(), cap);
+    assert_eq!(pane.stats.event_log_events_dropped, 1_000 - cap as u64);
+    assert_eq!(
+        pane.event_log
+            .iter()
+            .map(|event| event.seq)
+            .collect::<Vec<_>>(),
+        (984..=1_000).collect::<Vec<_>>()
+    );
+    assert!(
+        pane.event_log
+            .iter()
+            .all(|event| matches!(event.kind, PaneEventKind::Output(_))),
+        "only retained output events should remain"
+    );
+}
+
+#[test]
 fn pane_manager_output_event_includes_transcript_offset_when_enabled() {
     let shared = Arc::new(Mutex::new(FakeSurfaceShared::default()));
     let backend = FakeSurfaceBackend::new(

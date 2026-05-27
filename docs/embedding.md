@@ -134,6 +134,29 @@ history lines have been dropped by the retention policy.
 Scrollback is storage, not a full UI. Hosts decide how to implement search,
 selection, copying, and viewport controls.
 
+## Event Log Retention
+
+`PaneManagerConfig::with_event_log_retention` controls the per-pane event
+history retained for diagnostics and repro dumps:
+
+```rust
+# use panesmith_core::{EventLogRetention, PaneManagerConfig};
+let manager_config = PaneManagerConfig::default()
+    .with_event_log_retention(EventLogRetention::bounded(10_000));
+let dashboard_config = PaneManagerConfig::default()
+    .with_max_event_log_entries(5_000);
+let no_history_config = PaneManagerConfig::default()
+    .with_event_log_retention(EventLogRetention::disabled());
+# let _ = (manager_config, dashboard_config, no_history_config);
+```
+
+The default remains unlimited for compatibility. Brehon-style long-running
+dashboards that supervise many high-output agent panes should bound or disable
+retained event history so diagnostic storage does not grow for the full pane
+lifetime. The policy does not change live delivery from
+`PaneManager::drain_events`, subscribers, or event sinks. Snapshots and repro
+dumps report `event_log_events_dropped` when retained history is partial.
+
 ## Embedded Limits
 
 Embedded mode is not a perfect substitute for native terminal ownership. It is

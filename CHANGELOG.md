@@ -7,6 +7,13 @@ Panesmith crates.
 
 No unreleased changes.
 
+## 0.2.2 - 2026-05-27
+
+- added manager-level per-pane event-log retention with unlimited, bounded, and
+  disabled policies so long-running dashboard hosts such as Brehon can cap
+  diagnostic event history without changing live event draining; snapshots and
+  repro dumps now report dropped retained-event counts when history is partial
+
 ## 0.2.1 - 2026-05-26
 
 - added explicit child process environment policies for daemon embedders,

@@ -114,14 +114,59 @@ pub struct PaneManagerConfig {
     pty_spawner: PtySpawner,
     surface_factory: SurfaceFactory,
     default_scrollback: ScrollbackConfig,
+    event_log_retention: EventLogRetention,
     max_pty_frames_per_drain: usize,
     max_pty_frames_per_repro_dump: usize,
+}
+
+/// Retention policy for each pane's retained event log.
+///
+/// This policy only applies to per-pane history used by diagnostics and repro
+/// dumps. The manager's live pending event queue, subscribers, and event sink
+/// still receive every event until callers drain or consume them normally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum EventLogRetention {
+    /// Retain all events for the pane lifetime.
+    #[default]
+    Unlimited,
+    /// Retain at most `max_events` events, evicting the oldest events first.
+    Bounded {
+        /// Maximum retained event count per pane.
+        max_events: usize,
+    },
+    /// Do not retain per-pane event history.
+    Disabled,
+}
+
+impl EventLogRetention {
+    /// Retains all events for the pane lifetime.
+    pub const fn unlimited() -> Self {
+        Self::Unlimited
+    }
+
+    /// Retains at most `max_events` events per pane.
+    ///
+    /// A zero limit is equivalent to [`EventLogRetention::Disabled`].
+    pub const fn bounded(max_events: usize) -> Self {
+        if max_events == 0 {
+            Self::Disabled
+        } else {
+            Self::Bounded { max_events }
+        }
+    }
+
+    /// Disables per-pane retained event history.
+    pub const fn disabled() -> Self {
+        Self::Disabled
+    }
 }
 
 impl fmt::Debug for PaneManagerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PaneManagerConfig")
             .field("default_scrollback", &self.default_scrollback)
+            .field("event_log_retention", &self.event_log_retention)
             .field("max_pty_frames_per_drain", &self.max_pty_frames_per_drain)
             .field(
                 "max_pty_frames_per_repro_dump",
@@ -147,6 +192,7 @@ impl Default for PaneManagerConfig {
                 )?) as Box<dyn SurfaceBackend + Send>)
             }),
             default_scrollback: ScrollbackConfig::default(),
+            event_log_retention: EventLogRetention::default(),
             max_pty_frames_per_drain: DEFAULT_MAX_PTY_FRAMES_PER_DRAIN,
             max_pty_frames_per_repro_dump: DEFAULT_MAX_PTY_FRAMES_PER_REPRO_DUMP,
         }
@@ -194,6 +240,19 @@ impl PaneManagerConfig {
     pub fn with_default_scrollback(mut self, scrollback: ScrollbackConfig) -> Self {
         self.default_scrollback = scrollback;
         self
+    }
+
+    /// Sets the per-pane event-log retention policy used for repro dumps and
+    /// diagnostics.
+    pub fn with_event_log_retention(mut self, retention: EventLogRetention) -> Self {
+        self.event_log_retention = retention;
+        self
+    }
+
+    /// Retains at most `max_events` events per pane, evicting the oldest
+    /// retained events first. Passing `0` disables retained event history.
+    pub fn with_max_event_log_entries(self, max_events: usize) -> Self {
+        self.with_event_log_retention(EventLogRetention::bounded(max_events))
     }
 
     /// Sets the maximum number of PTY frames drained per pane on each tick.
@@ -1454,7 +1513,7 @@ impl PaneManager {
             at: SystemTime::now(),
             kind,
         };
-        pane.event_log.push(event.clone());
+        retain_event_log(pane, event.clone(), self.config.event_log_retention);
         self.events.push_back(event);
         let event = self
             .events
@@ -2122,6 +2181,7 @@ impl PaneManager {
             backend: pane.surface.metadata(),
             size_history: pane.size_history.clone(),
             events: redact_repro_events(&pane.event_log, &spawn_config.command.program),
+            event_log_events_dropped: pane.stats.event_log_events_dropped,
             raw_transcript,
             final_surface: pane.merged_surface_snapshot().to_owned_snapshot(),
         })
@@ -2488,6 +2548,29 @@ impl PaneManager {
         pane.surface_generation += 1;
         Ok((update, pane.surface_generation))
     }
+}
+
+fn retain_event_log(pane: &mut PaneRuntimeState, event: PaneEvent, retention: EventLogRetention) {
+    match retention {
+        EventLogRetention::Unlimited => pane.event_log.push(event),
+        EventLogRetention::Disabled => increment_event_log_drop_count(&mut pane.stats, 1),
+        EventLogRetention::Bounded { max_events: 0 } => {
+            increment_event_log_drop_count(&mut pane.stats, 1);
+        }
+        EventLogRetention::Bounded { max_events } => {
+            pane.event_log.push(event);
+            let excess = pane.event_log.len().saturating_sub(max_events);
+            if excess > 0 {
+                pane.event_log.drain(0..excess);
+                increment_event_log_drop_count(&mut pane.stats, excess);
+            }
+        }
+    }
+}
+
+fn increment_event_log_drop_count(stats: &mut PaneStats, count: usize) {
+    let count = u64::try_from(count).unwrap_or(u64::MAX);
+    stats.event_log_events_dropped = stats.event_log_events_dropped.saturating_add(count);
 }
 
 fn classify_input_kind(input: &HostInput) -> InputKind {

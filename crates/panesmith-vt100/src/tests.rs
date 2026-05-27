@@ -34,6 +34,7 @@ fn repro_dump_from_public_vt100_backend_replays_simple_fixture() {
         backend: backend.metadata(),
         size_history: vec![ReproSizeEvent::new(0, size)],
         events: Vec::new(),
+        event_log_events_dropped: 0,
         raw_transcript: Some(ReproRawTranscript {
             start_offset: 0,
             bytes: b"hello world".to_vec(),
