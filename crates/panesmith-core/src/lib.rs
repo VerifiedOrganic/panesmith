@@ -41,9 +41,9 @@ pub use input_transaction::{
     InputTransactionError, InputVerification,
 };
 pub use manager::{
-    PaneAttachError, PaneAttachInputChunk, PaneAttachOutcome, PaneAttachTerminal,
-    PaneAttachTerminalControl, PaneExit, PaneHandle, PaneManager, PaneManagerConfig,
-    ScrollbackReader, TranscriptReader,
+    EventLogRetention, PaneAttachError, PaneAttachInputChunk, PaneAttachOutcome,
+    PaneAttachTerminal, PaneAttachTerminalControl, PaneExit, PaneHandle, PaneManager,
+    PaneManagerConfig, ScrollbackReader, TranscriptReader,
 };
 pub use pane::{
     AttachConfig, BackspaceEncoding, CellAttrs, CellStyle, CellWidth, ChildEnvironmentPolicy,

@@ -48,6 +48,7 @@ fn sample_dump(
         backend,
         size_history: vec![ReproSizeEvent::new(0, Size::new(24, 80))],
         events: vec![crate::PaneEvent::placeholder(PaneId::new(7))],
+        event_log_events_dropped: 0,
         raw_transcript,
         final_surface: SurfaceSnapshot::blank(Size::new(24, 80)).to_owned_snapshot(),
     }

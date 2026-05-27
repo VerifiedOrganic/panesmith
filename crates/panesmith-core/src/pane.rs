@@ -1122,6 +1122,10 @@ pub struct PaneStats {
     /// Total history lines dropped from the backing scrollback buffer because
     /// of the pane's configured retention policy.
     pub scrollback_lines_dropped: u64,
+    /// Total pane events omitted from retained event history because of the
+    /// manager's event-log retention policy.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub event_log_events_dropped: u64,
 }
 
 /// A read-only view of pane state.

@@ -69,9 +69,9 @@ pub struct ReproRawTranscript {
 
 /// A serializable repro artifact for debugging rendering issues.
 ///
-/// Dumps retain the manager's in-memory event log and size history for the
-/// pane lifetime, so long-running panes can accumulate larger repro artifacts
-/// until the host removes or rotates the pane.
+/// Dumps include the manager's retained event log and size history. Event
+/// history may be partial when the manager uses bounded or disabled
+/// event-log retention.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReproDump {
@@ -83,8 +83,11 @@ pub struct ReproDump {
     pub backend: SurfaceBackendMetadata,
     /// Initial size plus subsequent resize boundaries.
     pub size_history: Vec<ReproSizeEvent>,
-    /// Full pane event log retained by the manager.
+    /// Pane event log retained by the manager.
     pub events: Vec<PaneEvent>,
+    /// Number of pane events omitted from `events` by the retention policy.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub event_log_events_dropped: u64,
     /// Raw PTY bytes when raw transcript capture was enabled.
     pub raw_transcript: Option<ReproRawTranscript>,
     /// Final visible surface snapshot.
